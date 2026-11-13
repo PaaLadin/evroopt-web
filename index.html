@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0f1419">
+<title>Evroopt Budget</title>
+<style>
+:root{
+  --bg:#0f1419; --card:#171d24; --card2:#1c232b; --line:#2a323c;
+  --text:#e6edf3; --muted:#8b949e;
+  --green:#3fb950; --yellow:#d29922; --red:#f85149; --blue:#58a6ff;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',Roboto,Arial,sans-serif;font-size:13px;min-height:100%}
+button,input,select,textarea{font-family:inherit;font-size:inherit}
+header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line)}
+.hh{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-size:15px;margin:0;font-weight:600}
+.hh .who{font-size:11px;color:var(--muted)}
+.hh .who b{color:var(--blue)}
+.tabs{display:flex;border-top:1px solid var(--line);overflow-x:auto}
+.tabs button{flex:1 0 auto;background:transparent;border:0;color:var(--muted);padding:11px 12px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button.active{color:var(--blue);border-bottom-color:var(--blue);background:rgba(88,166,255,.05)}
+main{padding:12px 10px 80px;max-width:1400px;margin:0 auto}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px}
+.card h2{font-size:13px;margin:0 0 10px;color:var(--yellow);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.btn{background:var(--card2);border:1px solid var(--line);color:var(--text);padding:7px 12px;border-radius:6px;cursor:pointer;font-size:12px;transition:.15s}
+.btn:hover{background:#232a33}
+.btn.primary{background:var(--blue);color:#001a33;border-color:var(--blue);font-weight:600}
+.btn.green{background:var(--green);color:#002200;border-color:var(--green);font-weight:600}
+.btn.red{background:var(--red);color:#fff;border-color:var(--red);font-weight:600}
+.btn.sm{padding:4px 9px;font-size:11px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input[type=text],input[type=number],input[type=password],input[type=email],select,textarea{background:#0a0e12;border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:5px;width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
+label{display:block;font-size:11px;color:var(--muted);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.3px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;font-size:12px}
+th{background:#141a20;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.3px;font-weight:600}
+tr:hover td{background:#1a2129}
+.row-done td{opacity:.55}
+.row-done a{text-decoration:line-through}
+.pill{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600}
+.pill.draft{background:#333a44;color:var(--muted)}
+.pill.approved{background:rgba(88,166,255,.15);color:var(--blue)}
+.pill.in_progress{background:rgba(210,153,34,.15);color:var(--yellow)}
+.pill.done{background:rgba(63,185,80,.15);color:var(--green)}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+.muted{color:var(--muted);font-size:11px}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.trip-card{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer;transition:.15s}
+.trip-card:hover{border-color:var(--blue)}
+.trip-card.sel{border-color:var(--blue);background:rgba(88,166,255,.08)}
+.tc-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.tc-date{font-weight:600}
+.tc-items{font-size:11px;color:var(--muted)}
+.tc-sum{font-weight:600;margin-top:4px}
+.empty{padding:20px;text-align:center;color:var(--muted);font-size:12px}
+#modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center;padding:16px}
+#modal.on{display:flex}
+#modal .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;max-width:380px;width:100%}
+#modal h3{margin:0 0 12px;font-size:14px}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#000;color:#fff;padding:8px 16px;border-radius:6px;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:200}
+#toast.on{opacity:.95}
+.flex{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media(max-width:600px){
+  main{padding:8px 6px 80px}
+  th,td{padding:5px 4px;font-size:11px}
+  .btn{padding:6px 9px;font-size:11px}
+  .grid{grid-template-columns:1fr}
+  .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="hh">
+    <h1>🛒 Evroopt Budget</h1>
+    <div class="who" id="who">не авторизован</div>
+  </div>
+  <div class="tabs" id="tabs" style="display:none">
+    <button data-tab="plan" class="active">📋 План</button>
+    <button data-tab="wms">📦 Склад</button>
+    <button data-tab="fact">💰 Факт</button>
+    <button data-tab="audit">📊 Аудит</button>
+    <button data-tab="wizard">🔧 Мастер</button>
+    <button data-tab="sync">🔄 Синхро</button>
+  </div>
+</header>
+<main>
+  <section id="tab-login" class="tab-content active">
+    <div class="card" style="max-width:380px;margin:40px auto">
+      <h2>Вход</h2>
+      <label>Email</label>
+      <input type="email" id="li-email" placeholder="paaladin@paaladin.ru" autocomplete="username">
+      <label>Пароль</label>
+      <input type="password" id="li-pass" autocomplete="current-password">
+      <div style="margin-top:14px"><button class="btn primary" id="li-btn" style="width:100%">Войти</button></div>
+      <div class="muted" style="margin-top:10px" id="li-msg"></div>
+    </div>
+  </section>
+  <section id="tab-plan" class="tab-content"></section>
+  <section id="tab-wms" class="tab-content"></section>
+  <section id="tab-fact" class="tab-content"></section>
+  <section id="tab-audit" class="tab-content"></section>
+  <section id="tab-wizard" class="tab-content"></section>
+  <section id="tab-sync" class="tab-content"></section>
+</main>
+<div id="modal"><div class="box" id="modal-box"></div></div>
+<div id="toast"></div>
+<script>
+// ================= CONFIG =================
+const CFG = {
+  url: 'https://mowkvfgxrvfcafuuiaho.supabase.co',
+  key: 'sb_publishable_n9b-TOXOCU_ojtb0a_kbyQ_g3odyXIX'
+};
+const LS = 'evroopt_session_v1';
+const LS_CACHE = 'evroopt_cache_v1';
+
+// ================= STATE =================
+const S = {
+  token: null,
+  user: null,
+  role: null,
+  products: [],
+  trips: [],
+  tripItems: [],
+  wms: {},
+  currentTripId: null,
+  wizardResult: null,
+};
+
+// ================= API =================
+async function api(path, opts = {}) {
+  const headers = {
+    'apikey': CFG.key,
+    'Content-Type': 'application/json',
+    ...(opts.headers || {})
+  };
+  if (S.token) headers['Authorization'] = 'Bearer ' + S.token;
+  if (opts.prefer) headers['Prefer'] = opts.prefer;
+  const res = await fetch(CFG.url + path, {
+    method: opts.method || 'GET',
+    headers,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(res.status + ' ' + err.slice(0, 300));
+  }
+  if (res.status === 204) return null;
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+
+// ================= AUTH =================
+async function login(email, password) {
+  const res = await fetch(CFG.url + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { 'apikey': CFG.key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  if (!res.ok) throw new Error('Неверный email или пароль');
+  const d = await res.json();
+  S.token = d.access_token;
+  S.user = d.user;
+  S.role = (d.user.app_metadata || {}).role || 'buyer';
+  localStorage.setItem(LS, JSON.stringify({
+    token: d.access_token,
+    refresh: d.refresh_token,
+    email: d.user.email,
+    role: S.role,
+    exp: Date.now() + (d.expires_in * 1000) - 60000
+  }));
+  return d;
+}
+
+async function refreshIfNeeded() {
+  const raw = localStorage.getItem(LS);
+  if (!raw) return false;
+  const s = JSON.parse(raw);
+  if (!s.token) return false;
+  if (s.exp && s.exp > Date.now()) {
+    S.token = s.token;
+    S.role = s.role;
+    S.user = { email: s.email, app_metadata: { role: s.role } };
+    return true;
+  }
+  // нужно обновить
+  try {
+    const res = await fetch(CFG.url + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'apikey': CFG.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: s.refresh })
+    });
+    if (!res.ok) throw new Error('refresh failed');
+    const d = await res.json();
+    S.token = d.access_token;
+    S.user = d.user;
+    S.role = (d.user.app_metadata || {}).role || 'buyer';
+    localStorage.setItem(LS, JSON.stringify({
+      token: d.access_token, refresh: d.refresh_token,
+      email: d.user.email, role: S.role,
+      exp: Date.now() + (d.expires_in * 1000) - 60000
+    }));
+    return true;
+  } catch (e) {
+    localStorage.removeItem(LS);
+    return false;
+  }
+}
+
+function logout() {
+  S.token = null; S.user = null; S.role = null;
+  localStorage.removeItem(LS);
+  location.reload();
+}
+
+// ================= TOAST / MODAL =================
+function toast(msg, ms = 2000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  setTimeout(() => t.classList.remove('on'), ms);
+}
+
+function modal(html) {
+  const m = document.getElementById('modal');
+  document.getElementById('modal-box').innerHTML = html;
+  m.classList.add('on');
+}
+function closeModal() {
+  document.getElementById('modal').classList.remove('on');
+}
+document.getElementById('modal').addEventListener('click', (e) => {
+  if (e.target.id === 'modal') closeModal();
+});
+
+// ================= HELPERS =================
+function fmt(n, d = 2) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return (+n).toFixed(d);
+}
+function esc(s) {
+  return (s || '').toString().replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+// ================= DATA LOAD =================
+async function loadAll() {
+  const [products, trips, items, wms] = await Promise.all([
+    api('/rest/v1/products?select=*&order=name'),
+    api('/rest/v1/trips?select=*&order=date.desc'),
+    api('/rest/v1/trip_items?select=*'),
+    api('/rest/v1/wms?select=*'),
+  ]);
+  S.products = products || [];
+  S.trips = trips || [];
+  S.tripItems = items || [];
+  S.wms = {};
+  for (const w of (wms || [])) S.wms[w.product_id] = +w.have_qty || 0;
+}
+
+function productById(id) { return S.products.find(p => p.id === id); }
+function tripById(id) { return S.trips.find(t => t.id === id); }
+function itemsByTrip(tid) { return S.tripItems.filter(i => i.trip_id === tid); }
+
+function calcTrip(trip) {
+  const items = itemsByTrip(trip.id);
+  let plan = 0, fact = 0, bought = 0;
+  for (const it of items) {
+    plan += +it.plan_price_total || 0;
+    bought += it._bought ? 1 : 0;
+    fact += it._fact_price || 0;
+  }
+  return { items, plan, fact, bought, total: items.length };
+}
+
+// ================= RENDER: PLAN =================
+function renderPlan() {
+  const root = document.getElementById('tab-plan');
+  const isAdmin = S.role === 'admin';
+
+  // группируем по статусу
+  const groups = { draft: [], approved: [], in_progress: [], done: [] };
+  for (const t of S.trips) {
+    const st = t.status || 'draft';
+    if (groups[st]) groups[st].push(t);
+  }
+
+  let html = '<div class="card"><h2>📋 Походы <span class="muted" style="font-weight:400">' + S.trips.length + '</span></h2>';
+  if (isAdmin) {
+    html += '<div class="flex" style="margin-bottom:10px"><button class="btn primary" id="add-trip-btn">+ Добавить поход</button>';
+    html += '<button class="btn" id="reload-btn">🔄 Обновить</button></div>';
+  }
+
+  const statusNames = { draft: 'Черновик', approved: 'Утверждён', in_progress: 'В процессе', done: 'Завершён' };
+  for (const st of ['draft', 'approved', 'in_progress', 'done']) {
+    if (!groups[st].length) continue;
+    if (st === 'draft' && !isAdmin) continue;
+    html += '<h3 style="font-size:12px;margin:14px 0 6px;color:var(--muted)">' + statusNames[st] + ' (' + groups[st].length + ')</h3>';
+    html += '<div class="grid">';
+    for (const t of groups[st]) {
+      const c = calcTrip(t);
+      html += '<div class="trip-card" data-trip="' + t.id + '">';
+      html += '<div class="tc-h"><span class="tc-date">' + fmtDate(t.date) + '</span><span class="pill ' + st + '">' + statusNames[st] + '</span></div>';
+      html += '<div class="tc-items">' + c.items.length + ' поз · план ' + fmt(c.plan) + ' BYN</div>';
+      if (t.note) html += '<div class="tc-items" style="color:var(--muted);font-style:italic">' + esc(t.note) + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  if (!S.trips.length) html += '<div class="empty">Походов нет. Открой вкладку «Мастер» чтобы создать план.</div>';
+  html += '</div>';
+  root.innerHTML = html;
+
+  root.querySelectorAll('.trip-card').forEach(el => {
+    el.addEventListener('click', () => openTrip(+el.dataset.trip));
+  });
+  const addBtn = document.getElementById('add-trip-btn');
+  if (addBtn) addBtn.addEventListener('click', addTripModal);
+  const reloadBtn = document.getElementById('reload-btn');
+  if (reloadBtn) reloadBtn.addEventListener('click', async () => {
+    await loadAll(); renderPlan(); toast('Обновлено');
+  });
+}
+
+// ================= TRIP DETAIL =================
+async function openTrip(tid) {
+  const t = tripById(tid);
+  if (!t) return;
+  const items = itemsByTrip(tid);
+  const isAdmin = S.role === 'admin';
+  const isBuyer = S.role === 'buyer';
+  const editable = isAdmin && (t.status === 'draft');
+  const canBuy = (isAdmin && (t.status === 'approved' || t.status === 'in_progress')) ||
+                 (isBuyer && (t.status === 'approved' || t.status === 'in_progress'));
+
+  const statusNames = { draft: 'Черновик', approved: 'Утверждён', in_progress: 'В процессе', done: 'Завершён' };
+  let html = '<h3 style="margin-top:0">Поход ' + fmtDate(t.date) + ' — ' + statusNames[t.status] + '</h3>';
+  if (t.note) html += '<p class="muted">' + esc(t.note) + '</p>';
+
+  html += '<div class="flex" style="margin:10px 0">';
+  if (isAdmin && t.status === 'draft') {
+    html += '<button class="btn green" data-act="approve" data-tid="' + tid + '">✅ Утвердить</button>';
+    html += '<button class="btn red" data-act="cancel" data-tid="' + tid + '">✖ Отменить</button>';
+    html += '<button class="btn" data-act="additem" data-tid="' + tid + '">+ Позиция</button>';
+  }
+  if (isAdmin && (t.status === 'approved' || t.status === 'in_progress')) {
+    html += '<button class="btn green" data-act="finish" data-tid="' + tid + '">✔ Завершить (в purchases)</button>';
+    html += '<button class="btn red" data-act="cancel" data-tid="' + tid + '">✖ Отменить</button>';
+  }
+  html += '</div>';
+
+  html += '<table><thead><tr><th class="hide-sm">✓</th><th>Товар</th><th class="hide-sm">Вес</th><th class="num">Купить</th><th class="num hide-sm">Дома</th><th class="num">План</th><th class="num">Факт ₽</th><th class="num hide-sm">Факт вес</th></tr></thead><tbody>';
+
+  for (const it of items) {
+    if (it.hidden && !isAdmin) continue;
+    const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
+    const have = S.wms[it.product_id] || 0;
+    const buy = Math.max(0, (+it.target_qty || 0) - have);
+    const planAdj = buy > 0 && it.plan_price_per_unit ? buy * (+it.plan_price_per_unit) : 0;
+    const done = it._bought ? 'row-done' : '';
+    html += '<tr class="' + done + '" data-iid="' + it.id + '">';
+    html += '<td class="hide-sm">' + (canBuy ? '<input type="checkbox" data-act="bought" ' + (it._bought ? 'checked' : '') + '>' : (it._bought ? '✓' : '')) + '</td>';
+    html += '<td>';
+    if (p.search_url) html += '<a href="' + esc(p.search_url) + '" target="_blank">' + esc(p.name) + '</a>';
+    else html += esc(p.name);
+    if (p.brand) html += '<div class="muted">' + esc(p.brand) + '</div>';
+    html += '</td>';
+    html += '<td class="hide-sm">' + fmt(+it.target_qty, 2) + ' ' + esc(it.unit || p.unit || '') + '</td>';
+    html += '<td class="num"><b>' + fmt(buy, 2) + '</b></td>';
+    html += '<td class="num hide-sm">' + fmt(have, 2) + '</td>';
+    html += '<td class="num">' + fmt(planAdj, 2) + '</td>';
+    html += '<td class="num">' + (canBuy ? '<input type="number" step="0.01" style="width:70px;padding:3px 5px;text-align:right" data-act="fact-price" value="' + (it._fact_price || '') + '">' : fmt(it._fact_price, 2)) + '</td>';
+    html += '<td class="num hide-sm">' + (canBuy ? '<input type="text" style="width:60px;padding:3px 5px" data-act="fact-weight" value="' + esc(it._fact_weight || '') + '" placeholder="' + fmt(buy, 2) + '">' : esc(it._fact_weight || '—')) + '</td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  html += '<div style="margin-top:10px;text-align:right"><button class="btn" onclick="closeModal()">Закрыть</button></div>';
+  modal(html);
+  bindTripModal(tid);
+}
+
+function bindTripModal(tid) {
+  const box = document.getElementById('modal-box');
+  // approve / finish / cancel
+  box.querySelectorAll('[data-act]').forEach(el => {
+    const act = el.dataset.act;
+    if (['bought', 'fact-price', 'fact-weight'].includes(act)) return;
+    el.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (act === 'approve') await tripApprove(tid);
+      if (act === 'finish') await tripFinish(tid);
+      if (act === 'cancel') await tripCancel(tid);
+      if (act === 'additem') return addItemModal(tid);
+    });
+  });
+  // checkbox / price / weight — локальный черновик
+  box.querySelectorAll('input[data-act]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const tr = inp.closest('tr');
+      const iid = +tr.dataset.iid;
+      const it = S.tripItems.find(x => x.id === iid);
+      if (!it) return;
+      if (inp.dataset.act === 'bought') {
+        it._bought = inp.checked;
+        tr.classList.toggle('row-done', inp.checked);
+      }
+      if (inp.dataset.act === 'fact-price') it._fact_price = +inp.value || 0;
+      if (inp.dataset.act === 'fact-weight') it._fact_weight = inp.value;
+      saveFactDraft();
+    });
+  });
+}
+
+function saveFactDraft() {
+  const draft = {};
+  for (const it of S.tripItems) {
+    if (it._bought !== undefined || it._fact_price !== undefined) {
+      draft[it.id] = {
+        bought: it._bought,
+        fact_price: it._fact_price,
+        fact_weight: it._fact_weight
+      };
+    }
+  }
+  localStorage.setItem(LS_CACHE, JSON.stringify(draft));
+}
+
+function loadFactDraft() {
+  try {
+    const raw = localStorage.getItem(LS_CACHE);
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    for (const it of S.tripItems) {
+      const d = draft[it.id];
+      if (d) {
+        it._bought = d.bought;
+        it._fact_price = d.fact_price;
+        it._fact_weight = d.fact_weight;
+      }
+    }
+  } catch (e) {}
+}
+// ================= TRIP ACTIONS =================
+async function tripApprove(tid) {
+  if (!confirm('Утвердить поход? Сын сможет видеть его на телефоне.')) return;
+  try {
+    await api('/rest/v1/trips?id=eq.' + tid, {
+      method: 'PATCH',
+      body: { status: 'approved', approved_at: new Date().toISOString(), approved_by: S.user?.email }
+    });
+    const t = tripById(tid); if (t) t.status = 'approved';
+    closeModal(); renderPlan();
+    toast('Поход утверждён');
+  } catch (e) { toast('Ошибка: ' + e.message, 4000); }
+}
+
+async function tripCancel(tid) {
+  if (!confirm('Отменить поход?')) return;
+  try {
+    await api('/rest/v1/trips?id=eq.' + tid, {
+      method: 'PATCH', body: { status: 'cancelled' }
+    });
+    const t = tripById(tid); if (t) t.status = 'cancelled';
+    closeModal(); renderPlan(); toast('Отменён');
+  } catch (e) { toast('Ошибка: ' + e.message, 4000); }
+}
+
+async function tripFinish(tid) {
+  if (!confirm('Завершить поход? Все отмеченные позиции попадут в purchases и склад.')) return;
+  const items = itemsByTrip(tid).filter(it => it._bought && it._fact_price > 0);
+  if (!items.length) { toast('Нет купленных позиций с ценой'); return; }
+  try {
+    for (const it of items) {
+      const qty = (+it._fact_weight || Math.max(0, (+it.target_qty || 0) - (S.wms[it.product_id] || 0)));
+      const total = +it._fact_price || 0;
+      const ppu = qty > 0 ? total / qty : 0;
+
+      // 1) purchases (append)
+      await api('/rest/v1/purchases', {
+        method: 'POST',
+        prefer: 'return=minimal',
+        body: {
+          trip_id: tid, trip_item_id: it.id, product_id: it.product_id,
+          qty: qty, unit: it.unit,
+          price_per_unit: ppu, total_price: total,
+          was_planned: true, bought_by: S.user?.email
+        }
+      });
+
+      // 2) WMS add (через RPC — с историей)
+      await api('/rest/v1/rpc/apply_wms_delta', {
+        method: 'POST',
+        body: {
+          p_product_id: it.product_id,
+          p_delta: qty,
+          p_reason: 'purchase',
+          p_source: 'trip#' + tid,
+          p_author: S.user?.email || 'admin'
+        }
+      });
+
+      S.wms[it.product_id] = (S.wms[it.product_id] || 0) + qty;
+    }
+
+    // 3) trip -> done
+    await api('/rest/v1/trips?id=eq.' + tid, {
+      method: 'PATCH',
+      body: { status: 'done', done_at: new Date().toISOString(), done_by: S.user?.email }
+    });
+    const t = tripById(tid); if (t) t.status = 'done';
+
+    // 4) очистить локальный черновик по этим позициям
+    for (const it of items) { delete it._bought; delete it._fact_price; delete it._fact_weight; }
+    saveFactDraft();
+
+    closeModal(); renderPlan();
+    toast('Поход закрыт, ' + items.length + ' позиций в purchases');
+  } catch (e) { toast('Ошибка: ' + e.message, 5000); }
+}
+
+// ================= ADD TRIP =================
+function addTripModal() {
+  const today = new Date().toISOString().slice(0, 10);
+  modal(`
+    <h3>Новый поход</h3>
+    <label>Дата</label><input type="date" id="nt-date" value="${today}">
+    <label>Тип</label>
+    <select id="nt-kind">
+      <option value="base">Базовая закупка (много)</option>
+      <option value="fresh">Свежее (2-3 дня)</option>
+    </select>
+    <label>Бюджет (BYN)</label><input type="number" step="0.01" id="nt-budget" placeholder="100">
+    <label>Заметка</label><input type="text" id="nt-note">
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn primary" id="nt-save">Создать</button>
+    </div>
+  `);
+  document.getElementById('nt-save').addEventListener('click', async () => {
+    try {
+      const body = {
+        date: document.getElementById('nt-date').value,
+        kind: document.getElementById('nt-kind').value,
+        status: 'draft',
+        budget_byn: +document.getElementById('nt-budget').value || null,
+        note: document.getElementById('nt-note').value || null,
+        created_by: S.user?.email
+      };
+      const res = await api('/rest/v1/trips', {
+        method: 'POST', prefer: 'return=representation', body
+      });
+      S.trips.unshift(res[0]);
+      closeModal(); renderPlan(); toast('Поход создан');
+    } catch (e) { toast('Ошибка: ' + e.message, 4000); }
+  });
+}
+
+// ================= ADD ITEM =================
+function addItemModal(tid) {
+  const opts = S.products.map(p => `<option value="${p.id}">${esc(p.name)}${p.brand ? ' · ' + esc(p.brand) : ''}</option>`).join('');
+  modal(`
+    <h3>Добавить позицию в поход</h3>
+    <label>Товар</label>
+    <select id="ai-pid"><option value="">— выбери —</option>${opts}</select>
+    <label>Или новый товар (имя)</label>
+    <input type="text" id="ai-new-name" placeholder="Например: Сахар">
+    <label>Бренд (необязательно)</label>
+    <input type="text" id="ai-new-brand">
+    <label>Единица</label>
+    <select id="ai-unit"><option>кг</option><option>л</option><option>шт</option><option>уп</option></select>
+    <label>Сколько купить</label><input type="number" step="0.001" id="ai-qty" placeholder="2">
+    <label>Цена за единицу (BYN)</label><input type="number" step="0.01" id="ai-ppu">
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn primary" id="ai-save">Добавить</button>
+    </div>
+  `);
+  document.getElementById('ai-save').addEventListener('click', async () => {
+    try {
+      let pid = +document.getElementById('ai-pid').value;
+      const newName = document.getElementById('ai-new-name').value.trim();
+      if (!pid && newName) {
+        const res = await api('/rest/v1/products', {
+          method: 'POST', prefer: 'return=representation',
+          body: {
+            name: newName,
+            brand: document.getElementById('ai-new-brand').value || null,
+            unit: document.getElementById('ai-unit').value
+          }
+        });
+        pid = res[0].id;
+        S.products.push(res[0]);
+      }
+      if (!pid) { toast('Укажи товар'); return; }
+      const qty = +document.getElementById('ai-qty').value;
+      const ppu = +document.getElementById('ai-ppu').value || 0;
+      if (!qty) { toast('Укажи количество'); return; }
+      const res = await api('/rest/v1/trip_items', {
+        method: 'POST', prefer: 'return=representation',
+        body: {
+          trip_id: tid, product_id: pid,
+          target_qty: qty, unit: document.getElementById('ai-unit').value,
+          plan_price_per_unit: ppu, plan_price_total: qty * ppu
+        }
+      });
+      S.tripItems.push(res[0]);
+      toast('Добавлено'); openTrip(tid);
+    } catch (e) { toast('Ошибка: ' + e.message, 4000); }
+  });
+}
+// ================= RENDER: WMS =================
+function renderWMS() {
+  const root = document.getElementById('tab-wms');
+  const isAdmin = S.role === 'admin';
+  const rows = S.products.map(p => {
+    const have = S.wms[p.id] || 0;
+    return { p, have };
+  }).filter(r => r.have > 0 || isAdmin).sort((a, b) => a.p.name.localeCompare(b.p.name));
+
+  let html = '<div class="card"><h2>📦 Склад дома <span class="muted" style="font-weight:400">' + Object.values(S.wms).filter(x => x > 0).length + ' позиций</span></h2>';
+  html += '<p class="muted" style="margin:0 0 10px">Обнови остатки перед походом. Все изменения пишутся в историю.</p>';
+  if (isAdmin) {
+    html += '<div class="flex" style="margin-bottom:10px"><button class="btn primary" id="wms-add">+ Добавить продукт</button>';
+    html += '<button class="btn" id="wms-reload">🔄 Обновить</button></div>';
+  }
+
+  if (!rows.length) {
+    html += '<div class="empty">Склад пуст</div>';
+  } else {
+    html += '<table><thead><tr><th>Продукт</th><th class="num">Кол-во</th><th>Ед.</th>' + (isAdmin ? '<th></th>' : '') + '</tr></thead><tbody>';
+    for (const r of rows) {
+      html += '<tr data-pid="' + r.p.id + '">';
+      html += '<td>' + esc(r.p.name) + (r.p.brand ? '<div class="muted">' + esc(r.p.brand) + '</div>' : '') + '</td>';
+      html += '<td class="num">' + (isAdmin ? '<input type="number" step="0.001" value="' + r.have + '" data-pid="' + r.p.id + '" style="width:90px;text-align:right;padding:3px 5px">' : fmt(r.have, 3)) + '</td>';
+      html += '<td>' + esc(r.p.unit || '') + '</td>';
+      if (isAdmin) html += '<td><button class="btn sm" data-wms-zero="' + r.p.id + '">0</button></td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  root.innerHTML = html;
+
+  root.querySelectorAll('input[data-pid]').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const pid = +inp.dataset.pid;
+      const newVal = +inp.value || 0;
+      const oldVal = S.wms[pid] || 0;
+      const delta = newVal - oldVal;
+      if (delta === 0) return;
+      try {
+        await api('/rest/v1/rpc/apply_wms_delta', {
+          method: 'POST',
+          body: {
+            p_product_id: pid, p_delta: delta,
+            p_reason: 'manual_edit', p_source: 'wms_tab',
+            p_author: S.user?.email
+          }
+        });
+        S.wms[pid] = newVal;
+        toast('OK: ' + (delta > 0 ? '+' : '') + fmt(delta, 3));
+      } catch (e) {
+        inp.value = oldVal;
+        toast('Ошибка: ' + e.message, 4000);
+      }
+    });
+  });
+
+  root.querySelectorAll('[data-wms-zero]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const pid = +btn.dataset.wmsZero;
+      const oldVal = S.wms[pid] || 0;
+      if (oldVal === 0) return;
+      if (!confirm('Обнулить остаток?')) return;
+      try {
+        await api('/rest/v1/rpc/apply_wms_delta', {
+          method: 'POST',
+          body: { p_product_id: pid, p_delta: -oldVal, p_reason: 'zeroed', p_source: 'wms_tab', p_author: S.user?.email }
+        });
+        S.wms[pid] = 0;
+        renderWMS();
+      } catch (e) { toast('Ошибка: ' + e.message, 4000); }
+    });
+  });
+
+  const addBtn = document.getElementById('wms-add');
+  if (addBtn) addBtn.addEventListener('click', addProductModal);
+  const reloadBtn = document.getElementById('wms-reload');
+  if (reloadBtn) reloadBtn.addEventListener('click', async () => { await loadAll(); renderWMS(); toast('OK'); });
+}
+
+// ================= RENDER: FACT =================
+function renderFact() {
+  const root = document.getElementById('tab-fact');
+  const isBuyer = S.role === 'buyer';
+  const activeTrips = S.trips.filter(t => t.status === 'approved' || t.status === 'in_progress');
+
+  let html = '<div class="card"><h2>💰 Факт покупок</h2>';
+  html += '<p class="muted" style="margin:0 0 10px">Открой поход, отметь купленное, вбей реальные цены. Родитель потом закроет поход.</p>';
+
+  if (!activeTrips.length) {
+    html += '<div class="empty">Нет активных походов. ' + (isBuyer ? 'Жди утверждения родителя.' : 'Создай и утверди поход во вкладке План.') + '</div>';
+  } else {
+    for (const t of activeTrips) {
+      const c = calcTrip(t);
+      html += '<div class="card" style="background:var(--card2);margin:10px 0">';
+      html += '<h3 style="margin:0 0 6px;font-size:13px">Поход ' + fmtDate(t.date) + ' · ' + t.kind + '</h3>';
+      html += '<div class="muted">' + c.items.length + ' поз · план ' + fmt(c.plan) + ' BYN · куплено ' + c.bought + '/' + c.items.length + '</div>';
+      html += '<div style="margin-top:8px"><button class="btn primary" data-open-fact="' + t.id + '">Открыть</button></div>';
+      html += '</div>';
+    }
+  }
+  html += '</div>';
+  root.innerHTML = html;
+  root.querySelectorAll('[data-open-fact]').forEach(btn => {
+    btn.addEventListener('click', () => openTrip(+btn.dataset.openFact));
+  });
+}
+
+// ================= RENDER: AUDIT =================
+async function renderAudit() {
+  const root = document.getElementById('tab-audit');
+  root.innerHTML = '<div class="card"><h2>📊 Аудит</h2><div class="empty">Загрузка...</div></div>';
+  try {
+    const purchases = await api('/rest/v1/purchases?select=*&order=bought_at.desc&limit=2000');
+    const total = purchases.reduce((s, p) => s + (+p.total_price || 0), 0);
+    const byMonth = {};
+    for (const p of purchases) {
+      const m = (p.bought_at || '').slice(0, 7);
+      if (!m) continue;
+      byMonth[m] = byMonth[m] || { sum: 0, count: 0 };
+      byMonth[m].sum += +p.total_price || 0;
+      byMonth[m].count++;
+    }
+    const byProduct = {};
+    for (const p of purchases) {
+      byProduct[p.product_id] = byProduct[p.product_id] || { sum: 0, count: 0 };
+      byProduct[p.product_id].sum += +p.total_price || 0;
+      byProduct[p.product_id].count++;
+    }
+    const topProducts = Object.entries(byProduct)
+      .map(([pid, v]) => ({ pid: +pid, ...v }))
+      .sort((a, b) => b.sum - a.sum).slice(0, 10);
+
+    let html = '<div class="card"><h2>📊 Аудит <span class="muted" style="font-weight:400">' + purchases.length + ' покупок всего</span></h2>';
+    html += '<div class="grid">';
+    html += '<div class="trip-card"><div class="tc-items">Потрачено всего</div><div class="tc-sum">' + fmt(total) + ' BYN</div></div>';
+    html += '<div class="trip-card"><div class="tc-items">Месяцев с покупками</div><div class="tc-sum">' + Object.keys(byMonth).length + '</div></div>';
+    html += '<div class="trip-card"><div class="tc-items">Уникальных продуктов</div><div class="tc-sum">' + Object.keys(byProduct).length + '</div></div>';
+    html += '</div>';
+
+    if (Object.keys(byMonth).length) {
+      html += '<h3 style="font-size:12px;margin:14px 0 6px;color:var(--muted)">По месяцам</h3>';
+      html += '<table><thead><tr><th>Месяц</th><th class="num">Покупок</th><th class="num">Сумма</th></tr></thead><tbody>';
+      for (const [m, v] of Object.entries(byMonth).sort().reverse()) {
+        html += '<tr><td>' + esc(m) + '</td><td class="num">' + v.count + '</td><td class="num">' + fmt(v.sum) + ' BYN</td></tr>';
+      }
+      html += '</tbody></table>';
+    }
+
+    if (topProducts.length) {
+      html += '<h3 style="font-size:12px;margin:14px 0 6px;color:var(--muted)">Топ-10 продуктов по тратам</h3>';
+      html += '<table><thead><tr><th>Продукт</th><th class="num">Раз</th><th class="num">Сумма</th></tr></thead><tbody>';
+      for (const tp of topProducts) {
+        const p = productById(tp.pid) || { name: '#' + tp.pid };
+        html += '<tr><td>' + esc(p.name) + '</td><td class="num">' + tp.count + '</td><td class="num">' + fmt(tp.sum) + ' BYN</td></tr>';
+      }
+      html += '</tbody></table>';
+    }
+
+    html += '<div class="flex" style="margin-top:14px">';
+    html += '<button class="btn primary" id="audit-csv">📥 Экспорт purchases.csv</button>';
+    html += '<button class="btn" id="audit-json">📥 Экспорт audit.json для ИИ</button>';
+    html += '</div></div>';
+    root.innerHTML = html;
+
+    document.getElementById('audit-csv').addEventListener('click', () => {
+      let csv = 'date,product,qty,unit,price_per_unit,total,bought_by\n';
+      for (const p of purchases) {
+        const prod = productById(p.product_id) || { name: '#' + p.product_id };
+        csv += [p.bought_at, '"' + (prod.name || '') + '"', p.qty, p.unit, p.price_per_unit, p.total_price, p.bought_by].join(',') + '\n';
+      }
+      download(csv, 'purchases_' + new Date().toISOString().slice(0, 10) + '.csv', 'text/csv');
+    });
+    document.getElementById('audit-json').addEventListener('click', () => {
+      const data = {
+        generated: new Date().toISOString(),
+        total_byn: total,
+        by_month: byMonth,
+        top_products: topProducts.map(tp => ({
+          name: (productById(tp.pid) || {}).name || ('#' + tp.pid),
+          sum: tp.sum, count: tp.count
+        })),
+        wms_current: Object.entries(S.wms).filter(([k, v]) => v > 0).map(([k, v]) => ({
+          product: (productById(+k) || {}).name || ('#' + k),
+          have: v
+        })),
+        purchases_recent: purchases.slice(0, 200)
+      };
+      download(JSON.stringify(data, null, 2), 'audit_' + new Date().toISOString().slice(0, 10) + '.json', 'application/json');
+    });
+  } catch (e) {
+    root.innerHTML = '<div class="card"><h2>📊 Аудит</h2><div class="empty">Ошибка: ' + esc(e.message) + '</div></div>';
+  }
+}
+
+function download(text, filename, mime) {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+// ================= ADD PRODUCT =================
+function addProductModal() {
+  modal(`
+    <h3>Новый продукт</h3>
+    <label>Название</label><input type="text" id="np-name" placeholder="Молоко 2,5%">
+    <label>Бренд</label><input type="text" id="np-brand" placeholder="Milkavita">
+    <label>Единица</label>
+    <select id="np-unit"><option>кг</option><option>л</option><option>шт</option><option>уп</option><option>г</option><option>мл</option></select>
+    <label>Категория</label><input type="text" id="np-cat" placeholder="молочка, бакалея...">
+    <label>Начальный остаток</label><input type="number" step="0.001" id="np-have" value="0">
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn primary" id="np-save">Создать</button>
+    </div>
+  `);
+  document.getElementById('np-save').addEventListener('click', async () => {
+    try {
+      const name = document.getElementById('np-name').value.trim();
+      if (!name) { toast('Введи название'); return; }
+      const res = await api('/rest/v1/products', {
+        method: 'POST', prefer: 'return=representation',
+        body: {
+          name,
+          brand: document.getElementById('np-brand').value || null,
+          unit: document.getElementById('np-unit').value,
+          category: document.getElementById('np-cat').value || null
+        }
+      });
+      const p = res[0];
+      S.products.push(p);
+      const have = +document.getElementById('np-have').value || 0;
+      if (have > 0) {
+        await api('/rest/v1/rpc/apply_wms_delta', {
+          method: 'POST',
+          body: { p_product_id: p.id, p_delta: have, p_reason: 'initial', p_source: 'new_product', p_author: S.user?.email }
+        });
+        S.wms[p.id] = have;
+      }
+      closeModal(); renderWMS(); toast('Продукт создан');
+    } catch (e) { toast('Ошибка: ' + e.message, 4000); }
+  });
+}
+// ================= RENDER: WIZARD =================
+function renderWizard() {
+  const root = document.getElementById('tab-wizard');
+  const isAdmin = S.role === 'admin';
+  if (!isAdmin) {
+    root.innerHTML = '<div class="card"><h2>🔧 Мастер</h2><div class="empty">Только для родителя (admin).</div></div>';
+    return;
+  }
+  root.innerHTML = `
+    <div class="card">
+      <h2>🔧 Мастер: сгенерировать промт для ИИ</h2>
+      <p class="muted" style="margin:0 0 10px">Заполни параметры → скопируй промт → отправь ИИ (ChatGPT, Qwen, DeepSeek) → получи JSON → вставь ниже → загрузи в БД.</p>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        <div><label>Семья (чел.)</label><input type="number" id="w-family" value="7" min="1"></div>
+        <div><label>Бюджет (BYN)</label><input type="number" id="w-budget" value="1800" step="1"></div>
+        <div><label>Город</label><input type="text" id="w-city" value="Брест"></div>
+        <div><label>Магазин</label><input type="text" id="w-store" value="Евроопт"></div>
+        <div><label>Каждые N дней</label><input type="number" id="w-frequency" value="2" min="1"></div>
+        <div><label>Дней в плане</label><input type="number" id="w-days" value="30" min="7"></div>
+      </div>
+      <label>Ограничения (свободный текст)</label>
+      <textarea id="w-constraints" rows="2" placeholder="без свинины, меньше сахара, больше овощей..."></textarea>
+      <label style="margin-top:10px">Что есть дома (WMS-снимок)</label>
+      <textarea id="w-wms-snapshot" rows="3"></textarea>
+      <div class="flex" style="margin-top:12px">
+        <button class="btn primary" id="w-gen">🎯 Сгенерировать промт</button>
+        <button class="btn" id="w-fill-wms">Заполнить WMS из склада</button>
+      </div>
+      <label style="margin-top:14px">Промт для ИИ</label>
+      <textarea id="w-prompt" rows="18" style="font-family:monospace;font-size:11px"></textarea>
+      <div class="flex" style="margin-top:8px">
+        <button class="btn" id="w-copy">📋 Скопировать</button>
+        <button class="btn" id="w-download">💾 Скачать .md</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📥 Импорт ответа от ИИ</h2>
+      <p class="muted" style="margin:0 0 10px">Вставь JSON от ИИ (можно с \`\`\`json обёрткой) или загрузи файл.</p>
+      <textarea id="w-in" rows="10" placeholder='{"trips":[...]}' style="font-family:monospace;font-size:11px"></textarea>
+      <div class="flex" style="margin-top:8px">
+        <input type="file" id="w-file" accept=".json,.txt,.md" style="flex:1;min-width:200px">
+        <button class="btn primary" id="w-validate">✅ Валидировать</button>
+      </div>
+      <div id="w-preview" style="margin-top:10px"></div>
+      <button class="btn green" id="w-import" style="margin-top:10px;display:none;width:100%">📤 Загрузить в БД</button>
+    </div>
+  `;
+
+  document.getElementById('w-fill-wms').addEventListener('click', () => {
+    const lines = [];
+    for (const [pid, have] of Object.entries(S.wms)) {
+      if (+have <= 0) continue;
+      const p = productById(+pid);
+      if (!p) continue;
+      lines.push('- ' + p.name + ': ' + have + ' ' + (p.unit || ''));
+    }
+    document.getElementById('w-wms-snapshot').value = lines.join('\n') || '(пусто)';
+  });
+
+  document.getElementById('w-gen').addEventListener('click', () => {
+    const prompt = buildPrompt();
+    document.getElementById('w-prompt').value = prompt;
+    toast('Промт готов');
+  });
+
+  document.getElementById('w-copy').addEventListener('click', () => {
+    const ta = document.getElementById('w-prompt');
+    if (!ta.value) { toast('Сначала сгенерируй'); return; }
+    navigator.clipboard.writeText(ta.value).then(() => toast('Скопировано'));
+  });
+
+  document.getElementById('w-download').addEventListener('click', () => {
+    const ta = document.getElementById('w-prompt');
+    if (!ta.value) { toast('Сначала сгенерируй'); return; }
+    download(ta.value, 'evroopt_prompt.md', 'text/markdown');
+  });
+
+  document.getElementById('w-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      document.getElementById('w-in').value = r.result;
+      toast('Файл загружен');
+    };
+    r.readAsText(f);
+  });
+
+  document.getElementById('w-validate').addEventListener('click', () => {
+    try {
+      const raw = document.getElementById('w-in').value.trim();
+      if (!raw) { toast('Пусто'); return; }
+      const jsonStr = extractJson(raw);
+      const data = JSON.parse(jsonStr);
+      S.wizardResult = data;
+      const preview = validatePlan(data);
+      const html = '<div class="card" style="background:var(--card2)">' +
+        '<div><b>' + preview.trips + '</b> походов, <b>' + preview.items + '</b> позиций, план <b>' + fmt(preview.total) + ' BYN</b></div>' +
+        (preview.first ? '<div class="muted" style="margin-top:6px">Первый: ' + preview.first.date + ' — ' + preview.first.items + ' позиций</div>' : '') +
+        '</div>';
+      document.getElementById('w-preview').innerHTML = html;
+      document.getElementById('w-import').style.display = 'block';
+      toast('OK');
+    } catch (e) {
+      document.getElementById('w-preview').innerHTML = '<div class="card" style="background:var(--card2);color:var(--red)">Ошибка: ' + esc(e.message) + '</div>';
+      document.getElementById('w-import').style.display = 'none';
+    }
+  });
+
+  document.getElementById('w-import').addEventListener('click', importPlan);
+}
+
+function extractJson(text) {
+  // вырезаем \`\`\`json ... \`\`\` если есть
+  let t = text.trim();
+  const m = t.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/);
+  if (m) t = m[1].trim();
+  return t;
+}
+
+function validatePlan(data) {
+  const trips = data.trips || data.plan || [];
+  if (!Array.isArray(trips)) throw new Error('Нет поля trips[]');
+  let total = 0, itemsCount = 0;
+  for (const t of trips) {
+    const items = t.items || [];
+    itemsCount += items.length;
+    for (const it of items) {
+      total += +it.plan_price_total || (+it.target_qty * +it.plan_price_per_unit) || 0;
+    }
+  }
+  return {
+    trips: trips.length,
+    items: itemsCount,
+    total,
+    first: trips[0] ? { date: trips[0].date, items: (trips[0].items || []).length } : null
+  };
+}
+
+async function importPlan() {
+  const data = S.wizardResult;
+  if (!data) return;
+  const trips = data.trips || [];
+  if (!trips.length) { toast('Нет походов'); return; }
+  if (!confirm('Загрузить ' + trips.length + ' походов в БД?')) return;
+
+  let added = 0;
+  try {
+    for (const t of trips) {
+      // 1) создать трип
+      const tripRes = await api('/rest/v1/trips', {
+        method: 'POST', prefer: 'return=representation',
+        body: {
+          date: t.date,
+          kind: t.kind || 'fresh',
+          status: 'draft',
+          budget_byn: t.budget_byn || null,
+          note: t.note || null,
+          created_by: S.user?.email
+        }
+      });
+      const trip = tripRes[0];
+      added++;
+
+      // 2) для каждой позиции — найти/создать продукт, создать trip_item
+      for (const it of (t.items || [])) {
+        const name = (it.name || '').trim();
+        if (!name) continue;
+        let prod = S.products.find(p =>
+          p.name.toLowerCase() === name.toLowerCase() &&
+          (p.brand || '').toLowerCase() === (it.brand || '').toLowerCase()
+        );
+        if (!prod) {
+          const pr = await api('/rest/v1/products', {
+            method: 'POST', prefer: 'return=representation',
+            body: {
+              name, brand: it.brand || null,
+              unit: it.unit || 'шт',
+              category: it.category || null,
+              search_url: it.search_url || null
+            }
+          });
+          prod = pr[0];
+          S.products.push(prod);
+        }
+        const qty = +it.target_qty || 0;
+        const ppu = +it.plan_price_per_unit || 0;
+        const total = +it.plan_price_total || (qty * ppu);
+        await api('/rest/v1/trip_items', {
+          method: 'POST', prefer: 'return=minimal',
+          body: {
+            trip_id: trip.id, product_id: prod.id,
+            target_qty: qty, unit: it.unit || prod.unit,
+            plan_price_per_unit: ppu, plan_price_total: total
+          }
+        });
+      }
+    }
+    await loadAll();
+    renderPlan();
+    document.getElementById('w-import').style.display = 'none';
+    document.getElementById('w-in').value = '';
+    document.getElementById('w-preview').innerHTML = '<div class="card" style="background:var(--card2);color:var(--green)">✅ Загружено ' + added + ' походов</div>';
+    toast('Импорт OK');
+  } catch (e) {
+    toast('Ошибка импорта: ' + e.message, 5000);
+  }
+}
+
+function buildPrompt() {
+  const family = document.getElementById('w-family').value;
+  const budget = document.getElementById('w-budget').value;
+  const city = document.getElementById('w-city').value;
+  const store = document.getElementById('w-store').value;
+  const freq = document.getElementById('w-frequency').value;
+  const days = document.getElementById('w-days').value;
+  const constraints = document.getElementById('w-constraints').value;
+  const wms = document.getElementById('w-wms-snapshot').value;
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return `# Задание: составить план закупок продуктов
+
+## Параметры
+- Семья: ${family} человек
+- Бюджет на питание: ${budget} BYN на ${days} дней
+- Город: ${city}
+- Магазин: ${store}
+- Частота походов: каждые ${freq} дня
+- Старт: ${today}
+- Ограничения: ${constraints || 'нет'}
+
+## Что есть дома (учти при расчёте — уменьшай закупку на этот остаток)
+${wms || '(пусто)'}
+
+## Задача
+Составь план закупок на ${days} дней. Раздели на походы по ${freq} дня (первый = базовая закупка на весь период, дальше — свежее).
+Для КАЖДОЙ позиции укажи:
+- name: точное название как в каталоге ${store}
+- brand: производитель
+- unit: кг / л / шт / уп
+- target_qty: сколько нужно купить (учитывая, что есть дома)
+- plan_price_per_unit: цена за единицу из актуального каталога ${store}
+- plan_price_total: target_qty * plan_price_per_unit
+- search_url: ссылка на поиск в ${store} (формат: https://edostavka.by/search?query=<url-encoded name>)
+- category: бакалея / молочка / мясо / овощи / фрукты / хлеб / прочее
+
+## Формат ответа — СТРОГО JSON (без markdown, без пояснений):
+\`\`\`json
+{
+  "period": { "from": "${today}", "to": "<YYYY-MM-DD>", "days": ${days} },
+  "budget_byn": ${budget},
+  "family_size": ${family},
+  "store": "${store}",
+  "city": "${city}",
+  "trips": [
+    {
+      "date": "<YYYY-MM-DD>",
+      "kind": "base",
+      "note": "стартовая закупка",
+      "items": [
+        {
+          "name": "Сахар-песок",
+          "brand": "Городейский",
+          "unit": "кг",
+          "target_qty": 2.0,
+          "plan_price_per_unit": 2.60,
+          "plan_price_total": 5.20,
+          "search_url": "https://edostavka.by/search?query=%D1%81%D0%B0%D1%85%D0%B0%D1%80",
+          "category": "бакалея"
+        }
+      ]
+    }
+  ]
+}
+\`\`\`
+
+Отвечай ТОЛЬКО JSON. Никаких объяснений до или после.`;
+}
+// ================= RENDER: SYNC =================
+function renderSync() {
+  const root = document.getElementById('tab-sync');
+  root.innerHTML = `
+    <div class="card">
+      <h2>🔄 Синхронизация</h2>
+      <p class="muted" style="margin:0 0 10px">Данные хранятся в Supabase (центрально). Все устройства видят одно и то же после <b>Обновить</b>.</p>
+      <div class="flex">
+        <button class="btn primary" id="sync-reload">🔄 Обновить всё с сервера</button>
+        <button class="btn red" id="sync-logout">🚪 Выйти</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>💾 Локальный черновик факта</h2>
+      <p class="muted">Пока ты не закрыл поход, фактические цены/веса хранятся только в твоём браузере (localStorage). Это чтобы можно было работать в магазине без связи.</p>
+      <button class="btn" id="sync-clear-draft">Очистить локальный черновик</button>
+    </div>
+    <div class="card">
+      <h2>ℹ️ Сведения</h2>
+      <div class="muted">
+        <div>Сервер: <b>${CFG.url}</b></div>
+        <div>Пользователь: <b>${esc(S.user?.email || '')}</b></div>
+        <div>Роль: <b>${esc(S.role || '')}</b></div>
+        <div>Версия: 1.0</div>
+      </div>
+    </div>
+  `;
+  document.getElementById('sync-reload').addEventListener('click', async () => {
+    await loadAll(); renderPlan(); toast('Обновлено');
+  });
+  document.getElementById('sync-logout').addEventListener('click', () => {
+    if (confirm('Выйти?')) logout();
+  });
+  document.getElementById('sync-clear-draft').addEventListener('click', () => {
+    if (!confirm('Очистить локальный черновик?')) return;
+    localStorage.removeItem(LS_CACHE);
+    for (const it of S.tripItems) { delete it._bought; delete it._fact_price; delete it._fact_weight; }
+    toast('Черновик очищен');
+  });
+}
+
+// ================= NAVIGATION =================
+const renderers = {
+  plan: renderPlan,
+  wms: renderWMS,
+  fact: renderFact,
+  audit: renderAudit,
+  wizard: renderWizard,
+  sync: renderSync,
+};
+
+function switchTab(name) {
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
+  const target = document.getElementById('tab-' + name);
+  if (target) target.classList.add('active');
+  if (renderers[name]) renderers[name]();
+}
+
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-tab]');
+  if (btn) switchTab(btn.dataset.tab);
+});
+
+// ================= STARTUP =================
+async function boot() {
+  const ok = await refreshIfNeeded();
+  if (!ok) {
+    document.getElementById('tab-login').classList.add('active');
+    bindLogin();
+    return;
+  }
+  await enterApp();
+}
+
+function bindLogin() {
+  const btn = document.getElementById('li-btn');
+  const msg = document.getElementById('li-msg');
+  const doLogin = async () => {
+    const email = document.getElementById('li-email').value.trim();
+    const pass = document.getElementById('li-pass').value;
+    if (!email || !pass) { msg.textContent = 'Заполни email и пароль'; return; }
+    btn.disabled = true; msg.textContent = 'Вход...';
+    try {
+      await login(email, pass);
+      msg.textContent = '';
+      await enterApp();
+    } catch (e) {
+      msg.textContent = e.message;
+      btn.disabled = false;
+    }
+  };
+  btn.addEventListener('click', doLogin);
+  document.getElementById('li-pass').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doLogin();
+  });
+}
+
+async function enterApp() {
+  document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
+  document.getElementById('tab-login').classList.remove('active');
+  document.getElementById('tabs').style.display = 'flex';
+  const roleName = S.role === 'admin' ? '👨‍👩‍👧 Родитель (admin)' : '🧑 Покупатель (buyer)';
+  document.getElementById('who').innerHTML = '<b>' + esc(S.user?.email || '') + '</b> · ' + roleName;
+
+  try {
+    await loadAll();
+    loadFactDraft();
+  } catch (e) {
+    toast('Ошибка загрузки: ' + e.message, 5000);
+  }
+
+  // Начальная вкладка: buyer -> fact (чтобы сразу видел список), admin -> plan
+  const first = S.role === 'buyer' ? 'fact' : 'plan';
+  switchTab(first);
+}
+
+// Глобально
+window.closeModal = closeModal;
+boot();
+</script>
+</body>
+</html>
