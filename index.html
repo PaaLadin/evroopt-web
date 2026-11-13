@@ -1128,68 +1128,140 @@ async function importPlan() {
   if (!data) return;
   const trips = data.trips || [];
   if (!trips.length) { toast('Нет походов'); return; }
-  if (!confirm('Загрузить ' + trips.length + ' походов в БД?')) return;
 
-  let added = 0;
+  // Найти существующие по дате (не cancelled)
+  const existingByDate = {};
+  for (const t of S.trips) {
+    if (t.status !== 'cancelled') existingByDate[t.date] = t;
+  }
+  const newTrips = trips.filter(t => !existingByDate[t.date]);
+  const dupTrips = trips.filter(t => existingByDate[t.date]);
+
+  // Первый вопрос: добавлять новые?
+  if (newTrips.length && !confirm('Добавить ' + newTrips.length + ' новых походов?')) return;
+
+  // Второй вопрос: что делать с дублями?
+  let updateExisting = false;
+  if (dupTrips.length) {
+    const dates = dupTrips.map(t => t.date).join(', ');
+    const ask = 'Найдено ' + dupTrips.length + ' походов, которые уже есть в БД:\n' +
+                dates + '\n\n' +
+                'OK = ОБНОВИТЬ их (позиции заменятся свежими из JSON)\n' +
+                'Отмена = ПРОПУСТИТЬ (оставить как есть)';
+    updateExisting = confirm(ask);
+  }
+
+  let addedCount = 0;
+  let updatedCount = 0;
+  let skippedCount = 0;
+  const errors = [];
+
   try {
-    for (const t of trips) {
-      // 1) создать трип
-      const tripRes = await api('/rest/v1/trips', {
-        method: 'POST', prefer: 'return=representation',
-        body: {
-          date: t.date,
-          kind: t.kind || 'fresh',
-          status: 'draft',
-          budget_byn: t.budget_byn || null,
-          note: t.note || null,
-          created_by: S.user?.email
-        }
-      });
-      const trip = tripRes[0];
-      added++;
-
-      // 2) для каждой позиции — найти/создать продукт, создать trip_item
-      for (const it of (t.items || [])) {
-        const name = (it.name || '').trim();
-        if (!name) continue;
-        let prod = S.products.find(p =>
-          p.name.toLowerCase() === name.toLowerCase() &&
-          (p.brand || '').toLowerCase() === (it.brand || '').toLowerCase()
-        );
-        if (!prod) {
-          const pr = await api('/rest/v1/products', {
-            method: 'POST', prefer: 'return=representation',
+    // 1) Обновление существующих
+    if (updateExisting) {
+      for (const t of dupTrips) {
+        const existing = existingByDate[t.date];
+        try {
+          // удалить старые items
+          await api('/rest/v1/trip_items?trip_id=eq.' + existing.id, {
+            method: 'DELETE'
+          });
+          // обновить note
+          await api('/rest/v1/trips?id=eq.' + existing.id, {
+            method: 'PATCH',
             body: {
-              name, brand: it.brand || null,
-              unit: it.unit || 'шт',
-              category: it.category || null,
-              search_url: it.search_url || null
+              kind: t.kind || 'fresh',
+              note: t.note || null,
+              budget_byn: t.budget_byn || null
             }
           });
-          prod = pr[0];
-          S.products.push(prod);
+          // залить новые items
+          await importTripItems(existing.id, t.items || []);
+          updatedCount++;
+        } catch (e) {
+          errors.push(t.date + ': ' + e.message);
         }
-        const qty = +it.target_qty || 0;
-        const ppu = +it.plan_price_per_unit || 0;
-        const total = +it.plan_price_total || (qty * ppu);
-        await api('/rest/v1/trip_items', {
-          method: 'POST', prefer: 'return=minimal',
+      }
+    } else {
+      skippedCount = dupTrips.length;
+    }
+
+    // 2) Добавление новых
+    for (const t of newTrips) {
+      try {
+        const tripRes = await api('/rest/v1/trips', {
+          method: 'POST', prefer: 'return=representation',
           body: {
-            trip_id: trip.id, product_id: prod.id,
-            target_qty: qty, unit: it.unit || prod.unit,
-            plan_price_per_unit: ppu, plan_price_total: total
+            date: t.date,
+            kind: t.kind || 'fresh',
+            status: 'draft',
+            budget_byn: t.budget_byn || null,
+            note: t.note || null,
+            created_by: S.user?.email
           }
         });
+        const trip = tripRes[0];
+        await importTripItems(trip.id, t.items || []);
+        addedCount++;
+      } catch (e) {
+        errors.push(t.date + ': ' + e.message);
       }
     }
+
     await loadAll();
     renderPlan();
+
+    let summary = '✅ ';
+    if (addedCount) summary += 'Добавлено: ' + addedCount + '. ';
+    if (updatedCount) summary += 'Обновлено: ' + updatedCount + '. ';
+    if (skippedCount) summary += 'Пропущено: ' + skippedCount + '. ';
+    if (errors.length) summary += '❌ Ошибок: ' + errors.length + '. ';
+
     document.getElementById('w-import').style.display = 'none';
     document.getElementById('w-in').value = '';
-    document.getElementById('w-preview').innerHTML = '<div class="card" style="background:var(--card2);color:var(--green)">✅ Загружено ' + added + ' походов</div>';
-    toast('Импорт OK');
+    document.getElementById('w-preview').innerHTML =
+      '<div class="card" style="background:var(--card2);color:var(--green)">' +
+      esc(summary) +
+      (errors.length ? '<pre style="font-size:10px;color:var(--red);margin-top:8px">' + esc(errors.join('\n')) + '</pre>' : '') +
+      '</div>';
+    toast('Импорт OK: +' + addedCount + ' / ~' + updatedCount);
   } catch (e) {
     toast('Ошибка импорта: ' + e.message, 5000);
+  }
+}
+
+async function importTripItems(tripId, items) {
+  for (const it of items) {
+    const name = (it.name || '').trim();
+    if (!name) continue;
+    let prod = S.products.find(p =>
+      p.name.toLowerCase() === name.toLowerCase() &&
+      (p.brand || '').toLowerCase() === (it.brand || '').toLowerCase()
+    );
+    if (!prod) {
+      const pr = await api('/rest/v1/products', {
+        method: 'POST', prefer: 'return=representation',
+        body: {
+          name, brand: it.brand || null,
+          unit: it.unit || 'шт',
+          category: it.category || null,
+          search_url: it.search_url || null
+        }
+      });
+      prod = pr[0];
+      S.products.push(prod);
+    }
+    const qty = +it.target_qty || 0;
+    const ppu = +it.plan_price_per_unit || 0;
+    const total = +it.plan_price_total || (qty * ppu);
+    await api('/rest/v1/trip_items', {
+      method: 'POST', prefer: 'return=minimal',
+      body: {
+        trip_id: tripId, product_id: prod.id,
+        target_qty: qty, unit: it.unit || prod.unit,
+        plan_price_per_unit: ppu, plan_price_total: total
+      }
+    });
   }
 }
 
