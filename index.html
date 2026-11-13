@@ -63,7 +63,7 @@ a:hover{text-decoration:underline}
 .empty{padding:20px;text-align:center;color:var(--muted);font-size:12px}
 #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center;padding:16px}
 #modal.on{display:flex}
-#modal .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;max-width:380px;width:100%}
+#modal .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;max-width:960px;width:96%;max-height:92vh;overflow:auto}
 #modal h3{margin:0 0 12px;font-size:14px}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#000;color:#fff;padding:8px 16px;border-radius:6px;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:200}
 #toast.on{opacity:.95}
@@ -258,7 +258,7 @@ function fmtDate(s) {
 async function loadAll() {
   const [products, trips, items, wms] = await Promise.all([
     api('/rest/v1/products?select=*&order=name'),
-    api('/rest/v1/trips?select=*&order=date.desc'),
+    api('/rest/v1/trips?select=*&order=date.asc'),
     api('/rest/v1/trip_items?select=*'),
     api('/rest/v1/wms?select=*'),
   ]);
@@ -360,7 +360,7 @@ async function openTrip(tid) {
   }
   html += '</div>';
 
-  html += '<table><thead><tr><th class="hide-sm">✓</th><th>Товар</th><th class="hide-sm">Вес</th><th class="num">Купить</th><th class="num hide-sm">Дома</th><th class="num">План</th><th class="num">Факт ₽</th><th class="num hide-sm">Факт вес</th></tr></thead><tbody>';
+  html += '<div style="overflow-x:auto"><table style="min-width:600px"><th class="hide-sm">✓</th><th>Товар</th><th class="hide-sm">Вес</th><th class="num">Купить</th><th class="num hide-sm">Дома</th><th class="num">План</th><th class="num">Факт ₽</th><th class="num hide-sm">Факт вес</th></tr></thead><tbody>';
 
   for (const it of items) {
     if (it.hidden && !isAdmin) continue;
@@ -384,7 +384,7 @@ async function openTrip(tid) {
     html += '<td class="num hide-sm">' + (canBuy ? '<input type="text" style="width:60px;padding:3px 5px" data-act="fact-weight" value="' + esc(it._fact_weight || '') + '" placeholder="' + fmt(buy, 2) + '">' : esc(it._fact_weight || '—')) + '</td>';
     html += '</tr>';
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   html += '<div style="margin-top:10px;text-align:right"><button class="btn" onclick="closeModal()">Закрыть</button></div>';
   modal(html);
   bindTripModal(tid);
