@@ -667,26 +667,133 @@ function loadFactDraft() {
 // (функция clearAllTrips вызывается по кнопке)
 async function clearAllTrips() {
   if (S.role !== 'admin') { toast('Только для админа'); return; }
-  const count = S.trips.length;
-  if (count === 0) { toast('Нет походов'); return; }
+  if (S.trips.length === 0) { toast('Нет походов'); return; }
 
-  const msg = 'Удалить ВСЕ ' + count + ' походов и их позиции?\n\n' +
-              'Продукты (справочник) останутся.\n' +
-              'Покупки (purchases) и склад (wms) НЕ затрагиваются.\n\n' +
-              'Это необратимо. Продолжить?';
-  if (!confirm(msg)) return;
-  if (!confirm('Точно? Все ' + count + ' походов будут удалены.')) return;
-
+  // Проверим, в каких походах есть purchases — их защитим от массового удаления
+  let purchasedTripIds = new Set();
   try {
-    // Удаляем все trips (cascade удалит trip_items)
-    await api('/rest/v1/trips?id=gt.0', { method: 'DELETE' });
-    S.trips = [];
-    S.tripItems = [];
-    renderPlan();
-    toast('🗑 Удалено ' + count + ' походов');
-  } catch (e) {
-    toast('Ошибка: ' + e.message, 5000);
+    const purch = await api('/rest/v1/purchases?select=trip_id');
+    for (const p of purch) if (p.trip_id) purchasedTripIds.add(p.trip_id);
+  } catch (e) { /* если не смогли — без защиты */ }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const sorted = [...S.trips].sort((a, b) => a.date.localeCompare(b.date));
+  const minDate = sorted[0]?.date || today;
+  const maxDate = sorted[sorted.length - 1]?.date || today;
+
+  modal(`
+    <h3 style="margin-top:0">🗑 Удаление походов</h3>
+    <p class="muted" style="margin:0 0 12px">Продукты (справочник), покупки и склад НЕ затрагиваются. Удаляются только походы и их позиции.</p>
+
+    <label>Что удалять</label>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+      <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;color:var(--text)">
+        <input type="radio" name="clr-mode" value="draft" checked style="width:auto"> Только <b>черновики</b> (draft) — рекомендую
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;color:var(--text)">
+        <input type="radio" name="clr-mode" value="range" style="width:auto"> Диапазон дат
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;color:var(--text)">
+        <input type="radio" name="clr-mode" value="all" style="width:auto"> ВСЁ (все статусы)
+      </label>
+    </div>
+
+    <div id="clr-range" style="display:none;margin-bottom:10px">
+      <label>С даты (включительно)</label>
+      <input type="date" id="clr-from" value="${minDate}" min="${minDate}" max="${maxDate}">
+      <label style="margin-top:6px">По дату (включительно)</label>
+      <input type="date" id="clr-to" value="${maxDate}" min="${minDate}" max="${maxDate}">
+    </div>
+
+    <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;color:var(--yellow);margin-top:8px">
+      <input type="checkbox" id="clr-protect" checked style="width:auto">
+      Защитить походы с покупками (${purchasedTripIds.size} шт)
+    </label>
+
+    <div id="clr-preview" style="margin-top:12px;padding:10px;background:var(--card2);border-radius:6px;font-size:12px"></div>
+
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn red" id="clr-confirm">🗑 Удалить</button>
+    </div>
+  `);
+
+  const box = document.getElementById('modal-box');
+  const preview = document.getElementById('clr-preview');
+  const rangeBox = document.getElementById('clr-range');
+
+  function calcTargets() {
+    const mode = box.querySelector('input[name=clr-mode]:checked').value;
+    const protect = document.getElementById('clr-protect').checked;
+    let targets = S.trips.slice();
+    if (mode === 'draft') {
+      targets = targets.filter(t => t.status === 'draft');
+    } else if (mode === 'range') {
+      const from = document.getElementById('clr-from').value;
+      const to = document.getElementById('clr-to').value;
+      if (from) targets = targets.filter(t => t.date >= from);
+      if (to) targets = targets.filter(t => t.date <= to);
+    }
+    if (protect) {
+      targets = targets.filter(t => !purchasedTripIds.has(t.id));
+    }
+    return targets;
   }
+
+  function updatePreview() {
+    const targets = calcTargets();
+    if (!targets.length) {
+      preview.innerHTML = '<span style="color:var(--muted)">Нечего удалять по выбранным условиям</span>';
+      return;
+    }
+    const byStatus = {};
+    let itemsCount = 0;
+    for (const t of targets) {
+      byStatus[t.status] = (byStatus[t.status] || 0) + 1;
+      itemsCount += (S.tripItems || []).filter(i => i.trip_id === t.id).length;
+    }
+    const statStr = Object.entries(byStatus).map(([s, n]) => `${s}: ${n}`).join(', ');
+    const dates = targets.map(t => t.date).sort();
+    preview.innerHTML =
+      '<div style="color:var(--red);font-weight:600;margin-bottom:4px">Будет удалено: ' + targets.length + ' походов (' + itemsCount + ' позиций)</div>' +
+      '<div class="muted">' + statStr + '</div>' +
+      '<div class="muted" style="margin-top:4px">Даты: ' + dates[0] + ' … ' + dates[dates.length-1] + '</div>';
+  }
+
+  box.querySelectorAll('input[name=clr-mode]').forEach(r => {
+    r.addEventListener('change', () => {
+      rangeBox.style.display = (box.querySelector('input[name=clr-mode]:checked').value === 'range') ? 'block' : 'none';
+      updatePreview();
+    });
+  });
+  document.getElementById('clr-from').addEventListener('change', updatePreview);
+  document.getElementById('clr-to').addEventListener('change', updatePreview);
+  document.getElementById('clr-protect').addEventListener('change', updatePreview);
+  updatePreview();
+
+  document.getElementById('clr-confirm').addEventListener('click', async () => {
+    const targets = calcTargets();
+    if (!targets.length) { toast('Нечего удалять'); return; }
+    if (!confirm('Удалить ' + targets.length + ' походов? Это необратимо.')) return;
+
+    let deleted = 0;
+    let errors = 0;
+    for (const t of targets) {
+      try {
+        await api('/rest/v1/trips?id=eq.' + t.id, { method: 'DELETE' });
+        deleted++;
+      } catch (e) {
+        errors++;
+      }
+    }
+    // Обновить состояние
+    const deletedIds = new Set(targets.map(t => t.id));
+    S.trips = S.trips.filter(t => !deletedIds.has(t.id));
+    S.tripItems = S.tripItems.filter(i => !deletedIds.has(i.trip_id));
+    closeModal();
+    renderPlan();
+    toast('🗑 Удалено ' + deleted + (errors ? ', ошибок: ' + errors : ''));
+  });
 }
 
 async function clearUnusedProducts() {
