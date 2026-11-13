@@ -336,8 +336,12 @@ function renderPlan() {
 
   let html = '<div class="card"><h2>📋 Походы <span class="muted" style="font-weight:400">' + S.trips.length + '</span></h2>';
   if (isAdmin) {
-    html += '<div class="flex" style="margin-bottom:10px"><button class="btn primary" id="add-trip-btn">+ Добавить поход</button>';
-    html += '<button class="btn" id="reload-btn">🔄 Обновить</button></div>';
+    html += '<div class="flex" style="margin-bottom:10px;flex-wrap:wrap">';
+    html += '<button class="btn primary" id="add-trip-btn">+ Добавить поход</button>';
+    html += '<button class="btn" id="reload-btn">🔄 Обновить</button>';
+    html += '<button class="btn red" id="clear-trips-btn">🗑 Очистить походы</button>';
+    html += '<button class="btn" id="clear-products-btn" title="Удалить продукты, которые не используются ни в одном походе">🧹 Неисп. продукты</button>';
+    html += '</div>';
   }
 
   const statusNames = { draft: 'Черновик', approved: 'Утверждён', in_progress: 'В процессе', done: 'Завершён' };
@@ -369,6 +373,10 @@ function renderPlan() {
   if (reloadBtn) reloadBtn.addEventListener('click', async () => {
     await loadAll(); renderPlan(); toast('Обновлено');
   });
+  const clearBtn = document.getElementById('clear-trips-btn');
+  if (clearBtn) clearBtn.addEventListener('click', clearAllTrips);
+  const clearProdBtn = document.getElementById('clear-products-btn');
+  if (clearProdBtn) clearProdBtn.addEventListener('click', clearUnusedProducts);
 }
 
 // ================= TRIP DETAIL =================
@@ -651,6 +659,61 @@ function loadFactDraft() {
       }
     }
   } catch (e) {}
+}
+
+// Добавляем кнопку "Очистить все походы" в renderPlan (только admin)
+// Патч: добавляем в конец renderPlan после addBtn
+
+// (функция clearAllTrips вызывается по кнопке)
+async function clearAllTrips() {
+  if (S.role !== 'admin') { toast('Только для админа'); return; }
+  const count = S.trips.length;
+  if (count === 0) { toast('Нет походов'); return; }
+
+  const msg = 'Удалить ВСЕ ' + count + ' походов и их позиции?\n\n' +
+              'Продукты (справочник) останутся.\n' +
+              'Покупки (purchases) и склад (wms) НЕ затрагиваются.\n\n' +
+              'Это необратимо. Продолжить?';
+  if (!confirm(msg)) return;
+  if (!confirm('Точно? Все ' + count + ' походов будут удалены.')) return;
+
+  try {
+    // Удаляем все trips (cascade удалит trip_items)
+    await api('/rest/v1/trips?id=gt.0', { method: 'DELETE' });
+    S.trips = [];
+    S.tripItems = [];
+    renderPlan();
+    toast('🗑 Удалено ' + count + ' походов');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 5000);
+  }
+}
+
+async function clearUnusedProducts() {
+  if (S.role !== 'admin') { toast('Только для админа'); return; }
+  // Находим products, которые не используются ни в одном trip_item и не в purchases
+  try {
+    const usedInTrips = await api('/rest/v1/trip_items?select=product_id');
+    const usedInPurchases = await api('/rest/v1/purchases?select=product_id');
+    const usedIds = new Set([
+      ...usedInTrips.map(x => x.product_id),
+      ...usedInPurchases.map(x => x.product_id)
+    ]);
+    const unused = S.products.filter(p => !usedIds.has(p.id));
+    if (!unused.length) { toast('Неиспользуемых продуктов нет'); return; }
+    const msg = 'Найдено ' + unused.length + ' неиспользуемых продуктов.\n\n' +
+                unused.slice(0, 10).map(p => '· ' + p.name).join('\n') +
+                (unused.length > 10 ? '\n…и ещё ' + (unused.length - 10) : '') +
+                '\n\nУдалить их из справочника?';
+    if (!confirm(msg)) return;
+    for (const p of unused) {
+      await api('/rest/v1/products?id=eq.' + p.id, { method: 'DELETE' });
+    }
+    S.products = S.products.filter(p => !unused.includes(p));
+    toast('🗑 Удалено ' + unused.length + ' продуктов');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 5000);
+  }
 }
 // ================= TRIP ACTIONS =================
 async function tripApprove(tid) {
