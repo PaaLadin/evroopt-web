@@ -351,72 +351,190 @@ async function openTrip(tid) {
   html += '<div class="flex" style="margin:10px 0">';
   if (isAdmin && t.status === 'draft') {
     html += '<button class="btn green" data-act="approve" data-tid="' + tid + '">✅ Утвердить</button>';
-    html += '<button class="btn red" data-act="cancel" data-tid="' + tid + '">✖ Отменить</button>';
+    html += '<button class="btn red" data-act="cancel" data-tid="' + tid + '">✖ Вернуть в черновик</button>';
     html += '<button class="btn" data-act="additem" data-tid="' + tid + '">+ Позиция</button>';
+    html += '<button class="btn sm" data-act="show-all" data-tid="' + tid + '" id="show-all-btn">Показать все</button>';
   }
   if (isAdmin && (t.status === 'approved' || t.status === 'in_progress')) {
     html += '<button class="btn green" data-act="finish" data-tid="' + tid + '">✔ Завершить (в purchases)</button>';
-    html += '<button class="btn red" data-act="cancel" data-tid="' + tid + '">✖ Отменить</button>';
+    html += '<button class="btn red" data-act="cancel" data-tid="' + tid + '">✖ Вернуть в черновик</button>';
   }
   html += '</div>';
 
-  html += '<div style="overflow-x:auto"><table style="min-width:600px"><th class="hide-sm">✓</th><th>Товар</th><th class="hide-sm">Вес</th><th class="num">Купить</th><th class="num hide-sm">Дома</th><th class="num">План</th><th class="num">Факт ₽</th><th class="num hide-sm">Факт вес</th></tr></thead><tbody>';
+  // Считаем итог: план (только включённые), всего строк
+  let totalPlan = 0;
+  let includedCount = 0;
+  for (const it of items) {
+    const have = S.wms[it.product_id] || 0;
+    const ov = it.override_buy_qty;
+    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    if (!it.hidden) {
+      totalPlan += buy * (+it.plan_price_per_unit || 0);
+      includedCount++;
+    }
+  }
+
+  html += '<div style="overflow-x:auto"><table style="min-width:680px">';
+  html += '<thead><tr>';
+  if (isAdmin && t.status === 'draft') html += '<th style="width:32px">Вкл</th>';
+  html += '<th>Товар</th><th class="hide-sm">Вес</th><th class="num" style="width:90px">Купить</th><th class="num hide-sm">Дома</th><th class="num">План</th><th class="num">Факт ₽</th><th class="num hide-sm">Факт вес</th>';
+  html += '</tr></thead><tbody>';
 
   for (const it of items) {
-    if (it.hidden && !isAdmin) continue;
     const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
     const have = S.wms[it.product_id] || 0;
-    const buy = Math.max(0, (+it.target_qty || 0) - have);
-    const planAdj = buy > 0 && it.plan_price_per_unit ? buy * (+it.plan_price_per_unit) : 0;
+    const ov = it.override_buy_qty;
+    const buyCalc = Math.max(0, (+it.target_qty || 0) - have);
+    const buy = (ov !== null && ov !== undefined) ? +ov : buyCalc;
+    const isOverride = (ov !== null && ov !== undefined);
+    const planAdj = buy * (+it.plan_price_per_unit || 0);
     const done = it._bought ? 'row-done' : '';
-    html += '<tr class="' + done + '" data-iid="' + it.id + '">';
-    html += '<td class="hide-sm">' + (canBuy ? '<input type="checkbox" data-act="bought" ' + (it._bought ? 'checked' : '') + '>' : (it._bought ? '✓' : '')) + '</td>';
+    const hiddenRow = it.hidden ? ' style="opacity:0.35;background:#1a1d21"' : '';
+    const hiddenLabel = it.hidden ? '<span class="muted" style="font-size:10px"> (скрыто от сына)</span>' : '';
+
+    html += '<tr class="' + done + '" data-iid="' + it.id + '"' + hiddenRow + '>';
+
+    // Колонка «Вкл» для админа в draft
+    if (isAdmin && t.status === 'draft') {
+      html += '<td class="hide-sm" style="text-align:center">';
+      html += '<input type="checkbox" data-act="visible" ' + (it.hidden ? '' : 'checked') + '>';
+      html += '</td>';
+    }
+
+    // Товар
     html += '<td>';
     if (p.search_url) html += '<a href="' + esc(p.search_url) + '" target="_blank">' + esc(p.name) + '</a>';
     else html += esc(p.name);
     if (p.brand) html += '<div class="muted">' + esc(p.brand) + '</div>';
+    if (hiddenLabel) html += hiddenLabel;
     html += '</td>';
+
+    // Вес из плана
     html += '<td class="hide-sm">' + fmt(+it.target_qty, 2) + ' ' + esc(it.unit || p.unit || '') + '</td>';
-    html += '<td class="num"><b>' + fmt(buy, 2) + '</b></td>';
+
+    // Купить (редактируемое для админа в draft)
+    html += '<td class="num">';
+    if (editable) {
+      html += '<input type="number" step="0.01" style="width:80px;padding:3px 5px;text-align:right" data-act="buy-qty" value="' + fmt(buy, 2) + '" placeholder="' + fmt(buyCalc, 2) + '">';
+      if (isOverride) html += '<div style="font-size:9px;color:var(--yellow)">ручн.</div>';
+    } else {
+      html += '<b>' + fmt(buy, 2) + '</b>' + (isOverride ? ' <span style="color:var(--yellow);font-size:10px">✎</span>' : '');
+    }
+    html += '</td>';
+
     html += '<td class="num hide-sm">' + fmt(have, 2) + '</td>';
     html += '<td class="num">' + fmt(planAdj, 2) + '</td>';
     html += '<td class="num">' + (canBuy ? '<input type="number" step="0.01" style="width:70px;padding:3px 5px;text-align:right" data-act="fact-price" value="' + (it._fact_price || '') + '">' : fmt(it._fact_price, 2)) + '</td>';
     html += '<td class="num hide-sm">' + (canBuy ? '<input type="text" style="width:60px;padding:3px 5px" data-act="fact-weight" value="' + esc(it._fact_weight || '') + '" placeholder="' + fmt(buy, 2) + '">' : esc(it._fact_weight || '—')) + '</td>';
     html += '</tr>';
   }
+
   html += '</tbody></table></div>';
-  html += '<div style="margin-top:10px;text-align:right"><button class="btn" onclick="closeModal()">Закрыть</button></div>';
+  html += '<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">';
+  html += '<div class="muted">Включено: <b>' + includedCount + '</b> из ' + items.length + ' · план: <b>' + fmt(totalPlan) + ' BYN</b></div>';
+  html += '<button class="btn" onclick="closeModal()">Закрыть</button>';
+  html += '</div>';
   modal(html);
   bindTripModal(tid);
 }
 
 function bindTripModal(tid) {
   const box = document.getElementById('modal-box');
-  // approve / finish / cancel
+
+  // Кнопки действий
   box.querySelectorAll('[data-act]').forEach(el => {
     const act = el.dataset.act;
-    if (['bought', 'fact-price', 'fact-weight'].includes(act)) return;
+    if (['bought', 'fact-price', 'fact-weight', 'visible', 'buy-qty'].includes(act)) return;
     el.addEventListener('click', async (e) => {
       e.preventDefault();
       if (act === 'approve') await tripApprove(tid);
       if (act === 'finish') await tripFinish(tid);
       if (act === 'cancel') await tripCancel(tid);
       if (act === 'additem') return addItemModal(tid);
+      if (act === 'show-all') {
+        // Показать скрытые в текущем модале
+        box.querySelectorAll('tr[data-iid]').forEach(tr => {
+          const it = S.tripItems.find(x => x.id === +tr.dataset.iid);
+          if (it && it.hidden) {
+            tr.style.opacity = '0.6';
+            tr.style.background = '#1a1d21';
+          }
+        });
+        toast('Скрытые позиции показаны');
+        return;
+      }
     });
   });
-  // checkbox / price / weight — локальный черновик
+
+  // Поля ввода
   box.querySelectorAll('input[data-act]').forEach(inp => {
+    const act = inp.dataset.act;
+
+    // Чекбокс «видимость» — сохранение в БД сразу
+    if (act === 'visible') {
+      inp.addEventListener('change', async () => {
+        const tr = inp.closest('tr');
+        const iid = +tr.dataset.iid;
+        const it = S.tripItems.find(x => x.id === iid);
+        if (!it) return;
+        const newHidden = !inp.checked;
+        try {
+          await api('/rest/v1/trip_items?id=eq.' + iid, {
+            method: 'PATCH',
+            body: { hidden: newHidden }
+          });
+          it.hidden = newHidden;
+          tr.style.opacity = newHidden ? '0.35' : '1';
+          tr.style.background = newHidden ? '#1a1d21' : '';
+          toast(newHidden ? 'Скрыто от сына' : 'Показано сыну');
+        } catch (e) {
+          inp.checked = !inp.checked;
+          toast('Ошибка: ' + e.message, 4000);
+        }
+      });
+      return;
+    }
+
+    // Редактирование «Купить»
+    if (act === 'buy-qty') {
+      inp.addEventListener('change', async () => {
+        const tr = inp.closest('tr');
+        const iid = +tr.dataset.iid;
+        const it = S.tripItems.find(x => x.id === iid);
+        if (!it) return;
+        const val = inp.value.trim();
+        const newVal = val === '' ? null : parseFloat(val);
+        try {
+          await api('/rest/v1/trip_items?id=eq.' + iid, {
+            method: 'PATCH',
+            body: { override_buy_qty: newVal }
+          });
+          it.override_buy_qty = newVal;
+          // Пересчитать план в строке
+          const pricePerUnit = +it.plan_price_per_unit || 0;
+          const newPlan = (newVal !== null ? newVal : Math.max(0, (+it.target_qty || 0) - (S.wms[it.product_id] || 0))) * pricePerUnit;
+          const planCell = tr.children[tr.children.length - 3];
+          if (planCell) planCell.textContent = fmt(newPlan, 2);
+          toast('Купить: ' + fmt(newVal !== null ? newVal : Math.max(0, (+it.target_qty || 0) - (S.wms[it.product_id] || 0)), 2) + ' · План: ' + fmt(newPlan, 2) + ' BYN');
+        } catch (e) {
+          toast('Ошибка: ' + e.message, 4000);
+        }
+      });
+      return;
+    }
+
+    // Существующие: bought / fact-price / fact-weight (локальный черновик)
     inp.addEventListener('change', () => {
       const tr = inp.closest('tr');
       const iid = +tr.dataset.iid;
       const it = S.tripItems.find(x => x.id === iid);
       if (!it) return;
-      if (inp.dataset.act === 'bought') {
+      if (act === 'bought') {
         it._bought = inp.checked;
         tr.classList.toggle('row-done', inp.checked);
       }
-      if (inp.dataset.act === 'fact-price') it._fact_price = +inp.value || 0;
-      if (inp.dataset.act === 'fact-weight') it._fact_weight = inp.value;
+      if (act === 'fact-price') it._fact_price = +inp.value || 0;
+      if (act === 'fact-weight') it._fact_weight = inp.value;
       saveFactDraft();
     });
   });
@@ -469,9 +587,9 @@ async function tripCancel(tid) {
   if (!confirm('Отменить поход?')) return;
   try {
     await api('/rest/v1/trips?id=eq.' + tid, {
-      method: 'PATCH', body: { status: 'cancelled' }
+      method: 'PATCH', body: { status: 'draft', approved_at: null, approved_by: null }
     });
-    const t = tripById(tid); if (t) t.status = 'cancelled';
+    const t = tripById(tid); if (t) { t.status = 'draft'; t.approved_at = null; t.approved_by = null; }
     closeModal(); renderPlan(); toast('Отменён');
   } catch (e) { toast('Ошибка: ' + e.message, 4000); }
 }
