@@ -123,8 +123,7 @@ a:hover{text-decoration:underline}
   </div>
   <div class="tabs" id="tabs" style="display:none">
     <button data-tab="plan" class="active">📋 План</button>
-    <button data-tab="wms">📦 Склад</button>
-    <button data-tab="products">🍎 Продукты</button>
+    <button data-tab="catalog">🍎 Каталог</button>
     <button data-tab="fact">💰 Факт</button>
     <button data-tab="audit">📊 Аудит</button>
     <button data-tab="wizard">🔧 Мастер</button>
@@ -144,8 +143,7 @@ a:hover{text-decoration:underline}
     </div>
   </section>
   <section id="tab-plan" class="tab-content"></section>
-  <section id="tab-wms" class="tab-content"></section>
-  <section id="tab-products" class="tab-content"></section>
+  <section id="tab-catalog" class="tab-content"></section>
   <section id="tab-fact" class="tab-content"></section>
   <section id="tab-audit" class="tab-content"></section>
   <section id="tab-wizard" class="tab-content"></section>
@@ -992,87 +990,6 @@ function addItemModal(tid) {
     } catch (e) { toast('Ошибка: ' + e.message, 4000); }
   });
 }
-// ================= RENDER: WMS =================
-function renderWMS() {
-  const root = document.getElementById('tab-wms');
-  const isAdmin = S.role === 'admin';
-  const rows = S.products.map(p => {
-    const have = S.wms[p.id] || 0;
-    return { p, have };
-  }).filter(r => r.have > 0 || isAdmin).sort((a, b) => a.p.name.localeCompare(b.p.name));
-
-  let html = '<div class="card"><h2>📦 Склад дома <span class="muted" style="font-weight:400">' + Object.values(S.wms).filter(x => x > 0).length + ' позиций</span></h2>';
-  html += '<p class="muted" style="margin:0 0 10px">Обнови остатки перед походом. Все изменения пишутся в историю.</p>';
-  if (isAdmin) {
-    html += '<div class="flex" style="margin-bottom:10px"><button class="btn primary" id="wms-add">+ Добавить продукт</button>';
-    html += '<button class="btn" id="wms-reload">🔄 Обновить</button></div>';
-  }
-
-  if (!rows.length) {
-    html += '<div class="empty">Склад пуст</div>';
-  } else {
-    html += '<table><thead><tr><th>Продукт</th><th class="num">Кол-во</th><th>Ед.</th>' + (isAdmin ? '<th></th>' : '') + '</tr></thead><tbody>';
-    for (const r of rows) {
-      html += '<tr data-pid="' + r.p.id + '">';
-      html += '<td>' + esc(r.p.name) + (r.p.brand ? '<div class="muted">' + esc(r.p.brand) + '</div>' : '') + '</td>';
-      html += '<td class="num">' + (isAdmin ? '<input type="number" step="0.001" value="' + r.have + '" data-pid="' + r.p.id + '" style="width:90px;text-align:right;padding:3px 5px">' : fmt(r.have, 3)) + '</td>';
-      html += '<td>' + esc(r.p.unit || '') + '</td>';
-      if (isAdmin) html += '<td><button class="btn sm" data-wms-zero="' + r.p.id + '">0</button></td>';
-      html += '</tr>';
-    }
-    html += '</tbody></table>';
-  }
-  html += '</div>';
-  root.innerHTML = html;
-
-  root.querySelectorAll('input[data-pid]').forEach(inp => {
-    inp.addEventListener('change', async () => {
-      const pid = +inp.dataset.pid;
-      const newVal = +inp.value || 0;
-      const oldVal = S.wms[pid] || 0;
-      const delta = newVal - oldVal;
-      if (delta === 0) return;
-      try {
-        await api('/rest/v1/rpc/apply_wms_delta', {
-          method: 'POST',
-          body: {
-            p_product_id: pid, p_delta: delta,
-            p_reason: 'manual_edit', p_source: 'wms_tab',
-            p_author: S.user?.email
-          }
-        });
-        S.wms[pid] = newVal;
-        toast('OK: ' + (delta > 0 ? '+' : '') + fmt(delta, 3));
-      } catch (e) {
-        inp.value = oldVal;
-        toast('Ошибка: ' + e.message, 4000);
-      }
-    });
-  });
-
-  root.querySelectorAll('[data-wms-zero]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const pid = +btn.dataset.wmsZero;
-      const oldVal = S.wms[pid] || 0;
-      if (oldVal === 0) return;
-      if (!confirm('Обнулить остаток?')) return;
-      try {
-        await api('/rest/v1/rpc/apply_wms_delta', {
-          method: 'POST',
-          body: { p_product_id: pid, p_delta: -oldVal, p_reason: 'zeroed', p_source: 'wms_tab', p_author: S.user?.email }
-        });
-        S.wms[pid] = 0;
-        renderWMS();
-      } catch (e) { toast('Ошибка: ' + e.message, 4000); }
-    });
-  });
-
-  const addBtn = document.getElementById('wms-add');
-  if (addBtn) addBtn.addEventListener('click', addProductModal);
-  const reloadBtn = document.getElementById('wms-reload');
-  if (reloadBtn) reloadBtn.addEventListener('click', async () => { await loadAll(); renderWMS(); toast('OK'); });
-}
-
 // ================= RENDER: FACT =================
 function renderFact() {
   const root = document.getElementById('tab-fact');
@@ -1196,199 +1113,433 @@ function download(text, filename, mime) {
   a.click();
 }
 
-// ================= ADD PRODUCT =================
-function addProductModal() {
-  modal(`
-    <h3>Новый продукт</h3>
-    <label>Название</label><input type="text" id="np-name" placeholder="Молоко 2,5%">
-    <label>Бренд</label><input type="text" id="np-brand" placeholder="Milkavita">
-    <label>Единица</label>
-    <select id="np-unit"><option>кг</option><option>л</option><option>шт</option><option>уп</option><option>г</option><option>мл</option></select>
-    <label>Категория</label><input type="text" id="np-cat" placeholder="молочка, бакалея...">
-    <label>Начальный остаток</label><input type="number" step="0.001" id="np-have" value="0">
-    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="closeModal()">Отмена</button>
-      <button class="btn primary" id="np-save">Создать</button>
-    </div>
-  `);
-  document.getElementById('np-save').addEventListener('click', async () => {
-    try {
-      const name = document.getElementById('np-name').value.trim();
-      if (!name) { toast('Введи название'); return; }
-      const res = await api('/rest/v1/products', {
-        method: 'POST', prefer: 'return=representation',
-        body: {
-          name,
-          brand: document.getElementById('np-brand').value || null,
-          unit: document.getElementById('np-unit').value,
-          category: document.getElementById('np-cat').value || null
-        }
-      });
-      const p = res[0];
-      S.products.push(p);
-      const have = +document.getElementById('np-have').value || 0;
-      if (have > 0) {
-        await api('/rest/v1/rpc/apply_wms_delta', {
-          method: 'POST',
-          body: { p_product_id: p.id, p_delta: have, p_reason: 'initial', p_source: 'new_product', p_author: S.user?.email }
-        });
-        S.wms[p.id] = have;
-      }
-      closeModal(); renderWMS(); toast('Продукт создан');
-    } catch (e) { toast('Ошибка: ' + e.message, 4000); }
-  });
-}
+// ================= RENDER: CATALOG =================
+// ============================================================
+// CATALOG: объединённое дерево "Категория → Продукт"
+// ============================================================
 
-function renderProducts() {
+let catalogState = {
+  collapsed: {},   // { "молочка": true, "бакалея": false }
+  search: '',
+};
+
+function renderCatalog() {
   if (S.role !== 'admin') {
-    document.getElementById('tab-products').innerHTML =
-      '<div class="card"><h2>🍎 Продукты</h2><div class="empty">Только для админа</div></div>';
+    document.getElementById('tab-catalog').innerHTML =
+      '<div class="card"><h2>🍎 Каталог</h2><div class="empty">Только для админа</div></div>';
     return;
   }
-  const root = document.getElementById('tab-products');
+  const root = document.getElementById('tab-catalog');
 
   // Соберём статистику использования
-  const usage = {};  // product_id -> {tripItems, purchases, wms_qty}
+  const usage = {};
   for (const ti of S.tripItems) {
-    usage[ti.product_id] = usage[ti.product_id] || { tripItems: 0, purchases: 0, wms_qty: 0 };
+    usage[ti.product_id] = usage[ti.product_id] || { tripItems: 0, purchases: 0 };
     usage[ti.product_id].tripItems++;
   }
 
-  let html = '<div class="card">';
-  html += '<h2>🍎 Продукты <span class="muted" style="font-weight:400">' + S.products.length + ' шт</span></h2>';
-  html += '<p class="muted" style="margin:0 0 10px">Меняй единицу учёта и цену пересчёта. Используется для позиций, где указано «уп», но нужно в кг (масло, творог, сметана).</p>';
-  html += '<div class="flex" style="margin-bottom:10px;gap:6px"><input type="text" id="prod-filter" placeholder="Поиск по названию..." style="flex:1;min-width:150px"><button class="btn" id="prod-reload">🔄</button></div>';
-  html += '<div style="overflow-x:auto"><table style="min-width:520px"><thead><tr>';
-  html += '<th>Продукт</th><th>Кат.</th><th>Ед.</th><th class="num">Поз.</th><th class="num">Склад</th><th></th>';
-  html += '</tr></thead><tbody id="prod-tbody">';
-  const sorted = [...S.products].sort((a, b) => a.name.localeCompare(b.name));
-  for (const p of sorted) {
-    const u = usage[p.id] || { tripItems: 0 };
-    const wmsQty = S.wms[p.id] || 0;
-    html += '<tr data-pid="' + p.id + '" data-name="' + esc(p.name.toLowerCase()) + '">';
-    html += '<td><b>' + esc(p.name) + '</b>' + (p.brand ? '<div class="muted">' + esc(p.brand) + '</div>' : '') + '</td>';
-    html += '<td class="muted">' + esc(p.category || '—') + '</td>';
-    html += '<td><b style="color:var(--yellow)">' + esc(p.unit) + '</b></td>';
-    html += '<td class="num">' + u.tripItems + '</td>';
-    html += '<td class="num">' + (wmsQty > 0 ? fmt(wmsQty, 3) + ' ' + esc(p.unit) : '—') + '</td>';
-    html += '<td><button class="btn sm" data-edit="' + p.id + '">✏️</button></td>';
-    html += '</tr>';
+  // Группируем по категориям
+  const groups = {};
+  for (const p of S.products) {
+    const cat = (p.category || 'прочее').trim().toLowerCase();
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(p);
   }
-  html += '</tbody></table></div>';
+  // Сортируем продукты внутри категорий
+  for (const cat of Object.keys(groups)) {
+    groups[cat].sort((a, b) => a.name.localeCompare(b.name));
+  }
+  // Сортируем категории
+  const catOrder = ['бакалея', 'молочка', 'мясо', 'овощи', 'фрукты', 'хлеб', 'прочее'];
+  const catKeys = Object.keys(groups).sort((a, b) => {
+    const ia = catOrder.indexOf(a), ib = catOrder.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  const totalProducts = S.products.length;
+  const totalWithStock = Object.values(S.wms).filter(x => x > 0).length;
+
+  let html = '<div class="card">';
+  html += '<h2>🍎 Каталог <span class="muted" style="font-weight:400">' + totalProducts + ' продуктов · ' + totalWithStock + ' на складе</span></h2>';
+  html += '<p class="muted" style="margin:0 0 10px">Древовидный список по категориям. Склад редактируется прямо здесь. Клик по продукту — расширенное редактирование.</p>';
+  html += '<div class="flex" style="margin-bottom:10px;gap:6px">';
+  html += '<input type="text" id="cat-filter" placeholder="Поиск..." value="' + esc(catalogState.search) + '" style="flex:1;min-width:120px">';
+  html += '<button class="btn" id="cat-reload">🔄</button>';
+  html += '<button class="btn" id="cat-expand">▾ Развернуть</button>';
+  html += '<button class="btn" id="cat-collapse">▸ Свернуть</button>';
+  html += '</div>';
+
+  if (!totalProducts) {
+    html += '<div class="empty">Каталог пуст</div>';
+  } else {
+    for (const cat of catKeys) {
+      const items = groups[cat];
+      const isCollapsed = catalogState.collapsed[cat] === true;
+
+      // Фильтр по поиску — если ни один продукт не подходит, скрываем всю категорию
+      const q = catalogState.search.toLowerCase().trim();
+      const filtered = q
+        ? items.filter(p => p.name.toLowerCase().includes(q) || (p.brand || '').toLowerCase().includes(q))
+        : items;
+      if (q && filtered.length === 0) continue;
+
+      const catIcon = catIconFor(cat);
+      const stockInGroup = filtered.filter(p => (S.wms[p.id] || 0) > 0).length;
+
+      html += '<div class="cat-group" style="margin-bottom:8px">';
+      html += '<div class="cat-header" data-cat="' + esc(cat) + '" style="cursor:pointer;padding:10px 12px;background:var(--card2);border:1px solid var(--line);border-radius:6px;display:flex;align-items:center;gap:10px;user-select:none">';
+      html += '<span style="font-size:16px">' + catIcon + '</span>';
+      html += '<b style="flex:1;text-transform:capitalize">' + esc(cat) + '</b>';
+      html += '<span class="muted" style="font-size:11px">' + filtered.length + ' · на складе: ' + stockInGroup + '</span>';
+      html += '<span style="font-size:14px;color:var(--muted)">' + (isCollapsed ? '▸' : '▾') + '</span>';
+      html += '</div>';
+
+      if (!isCollapsed) {
+        html += '<div class="cat-body" style="margin-top:6px;margin-left:10px">';
+        html += '<div style="overflow-x:auto"><table style="min-width:520px"><thead><tr>';
+        html += '<th>Продукт</th><th>Ед.</th><th class="num">Склад</th><th class="num">Поз.</th><th></th>';
+        html += '</tr></thead><tbody>';
+
+        for (const p of filtered) {
+          const u = usage[p.id] || { tripItems: 0 };
+          const wmsQty = S.wms[p.id] || 0;
+          const hasStock = wmsQty > 0;
+          html += '<tr data-pid="' + p.id + '">';
+          html += '<td><b>' + esc(p.name) + '</b>' + (p.brand ? '<div class="muted" style="font-size:10px">' + esc(p.brand) + '</div>' : '') + '</td>';
+          html += '<td style="color:var(--yellow)">' + esc(p.unit) + '</td>';
+          html += '<td class="num">';
+          html += '<input type="number" step="0.001" value="' + (wmsQty || '') + '" placeholder="0" data-wms-pid="' + p.id + '" style="width:80px;padding:3px 5px;text-align:right;' + (hasStock ? 'color:var(--green)' : '') + '">';
+          html += '</td>';
+          html += '<td class="num">' + u.tripItems + '</td>';
+          html += '<td><button class="btn sm" data-edit="' + p.id + '">✏️</button></td>';
+          html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+  }
   html += '</div>';
   root.innerHTML = html;
 
   // Поиск
-  const filter = document.getElementById('prod-filter');
+  const filter = document.getElementById('cat-filter');
   filter.addEventListener('input', () => {
-    const q = filter.value.toLowerCase().trim();
-    document.querySelectorAll('#prod-tbody tr').forEach(tr => {
-      tr.style.display = (!q || tr.dataset.name.includes(q)) ? '' : 'none';
+    catalogState.search = filter.value;
+    // Быстрый перерендер без потери фокуса
+    const pos = filter.selectionStart;
+    renderCatalog();
+    const newFilter = document.getElementById('cat-filter');
+    if (newFilter) {
+      newFilter.focus();
+      newFilter.setSelectionRange(pos, pos);
+    }
+  });
+
+  // Reload
+  document.getElementById('cat-reload').addEventListener('click', async () => {
+    await loadAll(); renderCatalog(); toast('Обновлено');
+  });
+
+  // Expand/Collapse
+  document.getElementById('cat-expand').addEventListener('click', () => {
+    catalogState.collapsed = {};
+    renderCatalog();
+  });
+  document.getElementById('cat-collapse').addEventListener('click', () => {
+    for (const p of S.products) {
+      const cat = (p.category || 'прочее').trim().toLowerCase();
+      catalogState.collapsed[cat] = true;
+    }
+    renderCatalog();
+  });
+
+  // Клик по заголовку категории — toggle
+  root.querySelectorAll('.cat-header').forEach(h => {
+    h.addEventListener('click', () => {
+      const cat = h.dataset.cat;
+      catalogState.collapsed[cat] = !catalogState.collapsed[cat];
+      renderCatalog();
     });
   });
-  document.getElementById('prod-reload').addEventListener('click', async () => {
-    await loadAll(); renderProducts(); toast('Обновлено');
+
+  // Изменение остатка на складе
+  root.querySelectorAll('input[data-wms-pid]').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const pid = +inp.dataset.wmsPid;
+      const newVal = +inp.value || 0;
+      const oldVal = S.wms[pid] || 0;
+      const delta = newVal - oldVal;
+      if (delta === 0) return;
+      try {
+        await api('/rest/v1/rpc/apply_wms_delta', {
+          method: 'POST',
+          body: {
+            p_product_id: pid, p_delta: delta,
+            p_reason: 'manual_edit', p_source: 'catalog_tab',
+            p_author: S.user?.email
+          }
+        });
+        S.wms[pid] = newVal;
+        inp.style.color = newVal > 0 ? 'var(--green)' : '';
+        toast('OK: ' + (delta > 0 ? '+' : '') + fmt(delta, 3));
+      } catch (e) {
+        inp.value = oldVal;
+        toast('Ошибка: ' + e.message, 4000);
+      }
+    });
   });
+
+  // Редактирование продукта
   root.querySelectorAll('[data-edit]').forEach(b => {
-    b.addEventListener('click', () => editProduct(+b.dataset.edit));
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editProduct(+b.dataset.edit);
+    });
   });
 }
 
+function catIconFor(cat) {
+  const icons = {
+    'бакалея': '🌾',
+    'молочка': '🥛',
+    'мясо': '🍖',
+    'овощи': '🥕',
+    'фрукты': '🍎',
+    'хлеб': '🍞',
+    'прочее': '📦',
+  };
+  return icons[cat] || '📁';
+}
+
+// ================= EDIT PRODUCT =================
 function editProduct(pid) {
   const p = S.products.find(x => x.id === pid);
   if (!p) return;
 
-  // Сколько используется
   const tiCount = S.tripItems.filter(i => i.product_id === pid).length;
   const wmsQty = S.wms[pid] || 0;
-
-  // Обратный коэффициент (в 1 новой единице сколько старых)
   const units = ['кг', 'л', 'шт', 'уп', 'г', 'мл'];
+  const commonCategories = ['бакалея', 'молочка', 'мясо', 'овощи', 'фрукты', 'хлеб', 'прочее'];
+
+  // Список всех категорий (включая редкие, что уже есть)
+  const allCats = new Set(commonCategories);
+  for (const x of S.products) if (x.category) allCats.add(x.category.trim().toLowerCase());
+  const cats = [...allCats].sort();
 
   modal(`
-    <h3 style="margin-top:0">✏️ Изменить единицу продукта</h3>
-    <p style="margin:0 0 10px"><b>${esc(p.name)}</b>${p.brand ? ' · ' + esc(p.brand) : ''}</p>
-    <p class="muted" style="margin:0 0 10px">Сейчас: <b style="color:var(--yellow)">${esc(p.unit)}</b>. Используется: ${tiCount} позиций, склад: ${wmsQty > 0 ? fmt(wmsQty,3) + ' ' + esc(p.unit) : 'пусто'}.</p>
+    <h3 style="margin-top:0">✏️ Редактировать продукт</h3>
 
-    <label>Новая единица</label>
-    <select id="ep-new-unit">
+    <label>Название</label>
+    <input type="text" id="ep-name" value="${esc(p.name)}">
+
+    <label>Бренд</label>
+    <input type="text" id="ep-brand" value="${esc(p.brand || '')}" placeholder="—">
+
+    <label>Категория</label>
+    <div style="display:flex;gap:6px">
+      <select id="ep-category" style="flex:1">
+        ${cats.map(c => `<option value="${esc(c)}" ${c === (p.category || 'прочее').trim().toLowerCase() ? 'selected' : ''}>${catIconFor(c)} ${esc(c)}</option>`).join('')}
+        <option value="__custom__">➕ Другая...</option>
+      </select>
+    </div>
+    <input type="text" id="ep-category-custom" placeholder="Новая категория" style="display:none;margin-top:6px">
+
+    <label style="margin-top:10px">Единица учёта</label>
+    <select id="ep-unit">
       ${units.map(u => `<option value="${u}" ${u === p.unit ? 'selected' : ''}>${u}</option>`).join('')}
     </select>
 
-    <label style="margin-top:10px">Пересчёт количества</label>
-    <div class="muted" style="font-size:11px;margin-bottom:6px">Если оставить 1 — изменится только единица (например, было «1 уп» станет «1 кг»). Если 1 уп = 180 г → введи 0.18.</div>
+    <label style="margin-top:10px">Коэффициент пересчёта (если сменил единицу)</label>
     <div style="display:flex;align-items:center;gap:6px">
-      <span>1 ${esc(p.unit)} =</span>
-      <input type="number" step="0.001" id="ep-coef" value="1" style="width:100px">
-      <span id="ep-coef-unit">${esc(p.unit)}</span>
+      <span class="muted">1 <b>${esc(p.unit)}</b> =</span>
+      <input type="number" step="0.001" id="ep-coef" value="1" style="width:90px">
+      <span id="ep-coef-unit" class="muted">${esc(p.unit)}</span>
+    </div>
+    <div class="muted" style="font-size:10px;margin-top:2px">Если единицу не меняешь — оставь 1</div>
+
+    <label style="margin-top:10px">Остаток на складе</label>
+    <input type="number" step="0.001" id="ep-wms" value="${wmsQty || 0}">
+
+    <div id="ep-preview" style="margin-top:12px;padding:10px;background:var(--card2);border-radius:6px;font-size:12px">
+      <div class="muted">Позиций в походах: ${tiCount} · в покупках: будет проверено при удалении</div>
     </div>
 
-    <div id="ep-preview" style="margin-top:12px;padding:10px;background:var(--card2);border-radius:6px;font-size:12px"></div>
-
-    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="closeModal()">Отмена</button>
-      <button class="btn primary" id="ep-apply">Применить</button>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
+      <button class="btn red" id="ep-delete">🗑 Удалить</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="closeModal()">Отмена</button>
+        <button class="btn primary" id="ep-apply">💾 Сохранить</button>
+      </div>
     </div>
   `);
 
   const box = document.getElementById('modal-box');
-  const newUnitSel = document.getElementById('ep-new-unit');
-  const coefInput = document.getElementById('ep-coef');
-  const coefUnit = document.getElementById('ep-coef-unit');
-  const preview = document.getElementById('ep-preview');
+  const nameInput = box.querySelector('#ep-name');
+  const brandInput = box.querySelector('#ep-brand');
+  const catSelect = box.querySelector('#ep-category');
+  const catCustom = box.querySelector('#ep-category-custom');
+  const unitSelect = box.querySelector('#ep-unit');
+  const coefInput = box.querySelector('#ep-coef');
+  const coefUnit = box.querySelector('#ep-coef-unit');
+  const wmsInput = box.querySelector('#ep-wms');
+  const preview = box.querySelector('#ep-preview');
+
+  // Показать поле "новая категория" если выбрано __custom__
+  catSelect.addEventListener('change', () => {
+    catCustom.style.display = catSelect.value === '__custom__' ? 'block' : 'none';
+    updatePreview();
+  });
+  unitSelect.addEventListener('change', () => {
+    coefUnit.textContent = unitSelect.value;
+    updatePreview();
+  });
+  coefInput.addEventListener('input', updatePreview);
+  wmsInput.addEventListener('input', updatePreview);
 
   function updatePreview() {
-    const newUnit = newUnitSel.value;
+    const newUnit = unitSelect.value;
     const coef = parseFloat(coefInput.value) || 1;
-    coefUnit.textContent = newUnit;
-    if (newUnit === p.unit && coef === 1) {
-      preview.innerHTML = '<span class="muted">Нет изменений</span>';
-      return;
-    }
-    let changes = [];
-    if (newUnit !== p.unit) changes.push('единица: <b>' + p.unit + '</b> → <b>' + newUnit + '</b>');
-    if (coef !== 1) {
-      changes.push('количество ×' + coef);
-      if (wmsQty > 0) {
-        changes.push('склад: ' + fmt(wmsQty,3) + ' ' + p.unit + ' → ' + fmt(wmsQty * coef, 3) + ' ' + newUnit);
-      }
-    }
-    preview.innerHTML =
-      '<div style="color:var(--yellow);font-weight:600;margin-bottom:4px">Изменится:</div>' +
-      '<ul style="margin:4px 0 4px 16px;padding:0;font-size:11px">' +
-      changes.map(c => '<li>' + c + '</li>').join('') +
-      '</ul>' +
-      '<div class="muted">Позиций в походах: ' + tiCount + ' · покупки: пересчитаются · история склада: пересчитается</div>';
-  }
-  newUnitSel.addEventListener('change', updatePreview);
-  coefInput.addEventListener('input', updatePreview);
-  updatePreview();
+    const newCat = catSelect.value === '__custom__' ? (catCustom.value || 'прочее') : catSelect.value;
+    const newWms = parseFloat(wmsInput.value) || 0;
+    const changes = [];
 
-  document.getElementById('ep-apply').addEventListener('click', async () => {
-    const newUnit = newUnitSel.value;
+    if (nameInput.value.trim() !== p.name) changes.push('название');
+    if ((brandInput.value.trim() || '') !== (p.brand || '')) changes.push('бренд');
+    if (newCat !== (p.category || 'прочее').trim().toLowerCase()) changes.push('категория: ' + (p.category || '—') + ' → ' + newCat);
+    if (newUnit !== p.unit) changes.push('единица: ' + p.unit + ' → ' + newUnit);
+    if (coef !== 1) changes.push('количество ×' + coef);
+    if (newWms !== wmsQty) changes.push('остаток: ' + fmt(wmsQty, 3) + ' → ' + fmt(newWms, 3));
+
+    if (changes.length === 0) {
+      preview.innerHTML = '<span class="muted">Нет изменений</span>';
+    } else {
+      preview.innerHTML =
+        '<div style="color:var(--yellow);font-weight:600;margin-bottom:4px">Изменится:</div>' +
+        '<ul style="margin:4px 0;padding-left:16px;font-size:11px">' +
+        changes.map(c => '<li>' + esc(c) + '</li>').join('') +
+        '</ul>' +
+        (tiCount > 0 ? '<div class="muted">В ' + tiCount + ' позициях походов и покупках тоже обновится</div>' : '');
+    }
+  }
+
+  box.querySelector('#ep-apply').addEventListener('click', async () => {
+    const newName = nameInput.value.trim();
+    if (!newName) { toast('Название обязательно'); return; }
+
+    const newBrand = brandInput.value.trim() || null;
+    const newUnit = unitSelect.value;
     const coef = parseFloat(coefInput.value) || 1;
-    if (newUnit === p.unit && coef === 1) { toast('Нет изменений'); return; }
-    if (!confirm('Применить? Это пересчитает ' + tiCount + ' позиций, покупки и склад. Откатить можно только вручную.')) return;
+    const newCat = catSelect.value === '__custom__' ? (catCustom.value.trim() || 'прочее') : catSelect.value;
+    const newWms = parseFloat(wmsInput.value) || 0;
 
     try {
-      const res = await api('/rest/v1/rpc/recalc_product_unit', {
-        method: 'POST',
-        body: {
-          p_product_id: pid,
-          p_new_unit: newUnit,
-          p_coefficient: coef,
-          p_author: S.user?.email
-        }
-      });
-      toast('✅ Пересчитано: ' + res.trip_items + ' позиций, ' + res.wms + ' WMS');
+      // 1) Если меняется единица/коэффициент — через RPC
+      if (newUnit !== p.unit || coef !== 1) {
+        const res = await api('/rest/v1/rpc/recalc_product_unit', {
+          method: 'POST',
+          body: {
+            p_product_id: pid, p_new_unit: newUnit,
+            p_coefficient: coef, p_author: S.user?.email
+          }
+        });
+        p.unit = newUnit;
+        toast('Пересчитано: ' + res.trip_items + ' позиций');
+      }
+
+      // 2) Остальные поля — обычный PATCH
+      const patch = {};
+      if (newName !== p.name) patch.name = newName;
+      if (newBrand !== (p.brand || null)) patch.brand = newBrand;
+      if (newCat !== (p.category || 'прочее').trim().toLowerCase()) patch.category = newCat;
+
+      if (Object.keys(patch).length > 0) {
+        await api('/rest/v1/products?id=eq.' + pid, {
+          method: 'PATCH', prefer: 'return=minimal', body: patch
+        });
+        Object.assign(p, patch);
+      }
+
+      // 3) Остаток на складе — через apply_wms_delta
+      const delta = newWms - wmsQty;
+      if (delta !== 0) {
+        await api('/rest/v1/rpc/apply_wms_delta', {
+          method: 'POST',
+          body: {
+            p_product_id: pid, p_delta: delta,
+            p_reason: 'product_edit', p_source: 'catalog',
+            p_author: S.user?.email
+          }
+        });
+        S.wms[pid] = newWms;
+      }
+
       await loadAll();
       closeModal();
-      renderProducts();
+      renderCatalog();
+      toast('✅ Сохранено');
     } catch (e) {
       toast('Ошибка: ' + e.message, 5000);
     }
   });
+
+  // УДАЛЕНИЕ
+  box.querySelector('#ep-delete').addEventListener('click', async () => {
+    // Проверим использование
+    try {
+      const [tiRes, purRes] = await Promise.all([
+        api('/rest/v1/trip_items?select=id&product_id=eq.' + pid),
+        api('/rest/v1/purchases?select=id&product_id=eq.' + pid),
+      ]);
+      const tiN = tiRes.length;
+      const purN = purRes.length;
+
+      if (tiN > 0 || purN > 0) {
+        const msg = 'Нельзя удалить: продукт используется.\n\n' +
+                    'В походах: ' + tiN + ' позиций\n' +
+                    'В покупках: ' + purN + ' записей\n\n' +
+                    'Сначала удали все походы с этим продуктом (вкладка План → 🗑) или замени продукт в походах.';
+        alert(msg);
+        return;
+      }
+
+      if (!confirm('Удалить продукт «' + p.name + '» навсегда?\n\nЭто необратимо. Продукт не используется ни в одном походе и ни в одной покупке.')) return;
+
+      // Удалим WMS-строку (если есть остаток — обнулим через apply_wms_delta, потом удалим product)
+      if (wmsQty > 0) {
+        await api('/rest/v1/rpc/apply_wms_delta', {
+          method: 'POST',
+          body: {
+            p_product_id: pid, p_delta: -wmsQty,
+            p_reason: 'product_delete', p_source: 'catalog',
+            p_author: S.user?.email
+          }
+        });
+      }
+
+      // Удалим запись из wms (FK cascade при delete product — но wms не каскадный, там PK не FK на products... проверим)
+      // В нашей схеме wms.product_id REFERENCES products(id) ON DELETE CASCADE — удалится автоматом
+      await api('/rest/v1/products?id=eq.' + pid, { method: 'DELETE' });
+
+      // Обновим локальное состояние
+      S.products = S.products.filter(x => x.id !== pid);
+      delete S.wms[pid];
+
+      closeModal();
+      renderCatalog();
+      toast('🗑 Удалено: ' + p.name);
+    } catch (e) {
+      toast('Ошибка: ' + e.message, 5000);
+    }
+  });
+
+  updatePreview();
 }
+
 // ================= RENDER: WIZARD =================
 function renderWizard() {
   const root = document.getElementById('tab-wizard');
@@ -1785,8 +1936,7 @@ function renderSync() {
 // ================= NAVIGATION =================
 const renderers = {
   plan: renderPlan,
-  wms: renderWMS,
-  products: renderProducts,
+  catalog: renderCatalog,
   fact: renderFact,
   audit: renderAudit,
   wizard: renderWizard,
