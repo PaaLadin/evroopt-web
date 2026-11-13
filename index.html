@@ -124,6 +124,7 @@ a:hover{text-decoration:underline}
   <div class="tabs" id="tabs" style="display:none">
     <button data-tab="plan" class="active">📋 План</button>
     <button data-tab="wms">📦 Склад</button>
+    <button data-tab="products">🍎 Продукты</button>
     <button data-tab="fact">💰 Факт</button>
     <button data-tab="audit">📊 Аудит</button>
     <button data-tab="wizard">🔧 Мастер</button>
@@ -144,6 +145,7 @@ a:hover{text-decoration:underline}
   </section>
   <section id="tab-plan" class="tab-content"></section>
   <section id="tab-wms" class="tab-content"></section>
+  <section id="tab-products" class="tab-content"></section>
   <section id="tab-fact" class="tab-content"></section>
   <section id="tab-audit" class="tab-content"></section>
   <section id="tab-wizard" class="tab-content"></section>
@@ -1236,6 +1238,157 @@ function addProductModal() {
     } catch (e) { toast('Ошибка: ' + e.message, 4000); }
   });
 }
+
+function renderProducts() {
+  if (S.role !== 'admin') {
+    document.getElementById('tab-products').innerHTML =
+      '<div class="card"><h2>🍎 Продукты</h2><div class="empty">Только для админа</div></div>';
+    return;
+  }
+  const root = document.getElementById('tab-products');
+
+  // Соберём статистику использования
+  const usage = {};  // product_id -> {tripItems, purchases, wms_qty}
+  for (const ti of S.tripItems) {
+    usage[ti.product_id] = usage[ti.product_id] || { tripItems: 0, purchases: 0, wms_qty: 0 };
+    usage[ti.product_id].tripItems++;
+  }
+
+  let html = '<div class="card">';
+  html += '<h2>🍎 Продукты <span class="muted" style="font-weight:400">' + S.products.length + ' шт</span></h2>';
+  html += '<p class="muted" style="margin:0 0 10px">Меняй единицу учёта и цену пересчёта. Используется для позиций, где указано «уп», но нужно в кг (масло, творог, сметана).</p>';
+  html += '<div class="flex" style="margin-bottom:10px;gap:6px"><input type="text" id="prod-filter" placeholder="Поиск по названию..." style="flex:1;min-width:150px"><button class="btn" id="prod-reload">🔄</button></div>';
+  html += '<div style="overflow-x:auto"><table style="min-width:520px"><thead><tr>';
+  html += '<th>Продукт</th><th>Кат.</th><th>Ед.</th><th class="num">Поз.</th><th class="num">Склад</th><th></th>';
+  html += '</tr></thead><tbody id="prod-tbody">';
+  const sorted = [...S.products].sort((a, b) => a.name.localeCompare(b.name));
+  for (const p of sorted) {
+    const u = usage[p.id] || { tripItems: 0 };
+    const wmsQty = S.wms[p.id] || 0;
+    html += '<tr data-pid="' + p.id + '" data-name="' + esc(p.name.toLowerCase()) + '">';
+    html += '<td><b>' + esc(p.name) + '</b>' + (p.brand ? '<div class="muted">' + esc(p.brand) + '</div>' : '') + '</td>';
+    html += '<td class="muted">' + esc(p.category || '—') + '</td>';
+    html += '<td><b style="color:var(--yellow)">' + esc(p.unit) + '</b></td>';
+    html += '<td class="num">' + u.tripItems + '</td>';
+    html += '<td class="num">' + (wmsQty > 0 ? fmt(wmsQty, 3) + ' ' + esc(p.unit) : '—') + '</td>';
+    html += '<td><button class="btn sm" data-edit="' + p.id + '">✏️</button></td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  html += '</div>';
+  root.innerHTML = html;
+
+  // Поиск
+  const filter = document.getElementById('prod-filter');
+  filter.addEventListener('input', () => {
+    const q = filter.value.toLowerCase().trim();
+    document.querySelectorAll('#prod-tbody tr').forEach(tr => {
+      tr.style.display = (!q || tr.dataset.name.includes(q)) ? '' : 'none';
+    });
+  });
+  document.getElementById('prod-reload').addEventListener('click', async () => {
+    await loadAll(); renderProducts(); toast('Обновлено');
+  });
+  root.querySelectorAll('[data-edit]').forEach(b => {
+    b.addEventListener('click', () => editProduct(+b.dataset.edit));
+  });
+}
+
+function editProduct(pid) {
+  const p = S.products.find(x => x.id === pid);
+  if (!p) return;
+
+  // Сколько используется
+  const tiCount = S.tripItems.filter(i => i.product_id === pid).length;
+  const wmsQty = S.wms[pid] || 0;
+
+  // Обратный коэффициент (в 1 новой единице сколько старых)
+  const units = ['кг', 'л', 'шт', 'уп', 'г', 'мл'];
+
+  modal(`
+    <h3 style="margin-top:0">✏️ Изменить единицу продукта</h3>
+    <p style="margin:0 0 10px"><b>${esc(p.name)}</b>${p.brand ? ' · ' + esc(p.brand) : ''}</p>
+    <p class="muted" style="margin:0 0 10px">Сейчас: <b style="color:var(--yellow)">${esc(p.unit)}</b>. Используется: ${tiCount} позиций, склад: ${wmsQty > 0 ? fmt(wmsQty,3) + ' ' + esc(p.unit) : 'пусто'}.</p>
+
+    <label>Новая единица</label>
+    <select id="ep-new-unit">
+      ${units.map(u => `<option value="${u}" ${u === p.unit ? 'selected' : ''}>${u}</option>`).join('')}
+    </select>
+
+    <label style="margin-top:10px">Пересчёт количества</label>
+    <div class="muted" style="font-size:11px;margin-bottom:6px">Если оставить 1 — изменится только единица (например, было «1 уп» станет «1 кг»). Если 1 уп = 180 г → введи 0.18.</div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span>1 ${esc(p.unit)} =</span>
+      <input type="number" step="0.001" id="ep-coef" value="1" style="width:100px">
+      <span id="ep-coef-unit">${esc(p.unit)}</span>
+    </div>
+
+    <div id="ep-preview" style="margin-top:12px;padding:10px;background:var(--card2);border-radius:6px;font-size:12px"></div>
+
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn primary" id="ep-apply">Применить</button>
+    </div>
+  `);
+
+  const box = document.getElementById('modal-box');
+  const newUnitSel = document.getElementById('ep-new-unit');
+  const coefInput = document.getElementById('ep-coef');
+  const coefUnit = document.getElementById('ep-coef-unit');
+  const preview = document.getElementById('ep-preview');
+
+  function updatePreview() {
+    const newUnit = newUnitSel.value;
+    const coef = parseFloat(coefInput.value) || 1;
+    coefUnit.textContent = newUnit;
+    if (newUnit === p.unit && coef === 1) {
+      preview.innerHTML = '<span class="muted">Нет изменений</span>';
+      return;
+    }
+    let changes = [];
+    if (newUnit !== p.unit) changes.push('единица: <b>' + p.unit + '</b> → <b>' + newUnit + '</b>');
+    if (coef !== 1) {
+      changes.push('количество ×' + coef);
+      if (wmsQty > 0) {
+        changes.push('склад: ' + fmt(wmsQty,3) + ' ' + p.unit + ' → ' + fmt(wmsQty * coef, 3) + ' ' + newUnit);
+      }
+    }
+    preview.innerHTML =
+      '<div style="color:var(--yellow);font-weight:600;margin-bottom:4px">Изменится:</div>' +
+      '<ul style="margin:4px 0 4px 16px;padding:0;font-size:11px">' +
+      changes.map(c => '<li>' + c + '</li>').join('') +
+      '</ul>' +
+      '<div class="muted">Позиций в походах: ' + tiCount + ' · покупки: пересчитаются · история склада: пересчитается</div>';
+  }
+  newUnitSel.addEventListener('change', updatePreview);
+  coefInput.addEventListener('input', updatePreview);
+  updatePreview();
+
+  document.getElementById('ep-apply').addEventListener('click', async () => {
+    const newUnit = newUnitSel.value;
+    const coef = parseFloat(coefInput.value) || 1;
+    if (newUnit === p.unit && coef === 1) { toast('Нет изменений'); return; }
+    if (!confirm('Применить? Это пересчитает ' + tiCount + ' позиций, покупки и склад. Откатить можно только вручную.')) return;
+
+    try {
+      const res = await api('/rest/v1/rpc/recalc_product_unit', {
+        method: 'POST',
+        body: {
+          p_product_id: pid,
+          p_new_unit: newUnit,
+          p_coefficient: coef,
+          p_author: S.user?.email
+        }
+      });
+      toast('✅ Пересчитано: ' + res.trip_items + ' позиций, ' + res.wms + ' WMS');
+      await loadAll();
+      closeModal();
+      renderProducts();
+    } catch (e) {
+      toast('Ошибка: ' + e.message, 5000);
+    }
+  });
+}
 // ================= RENDER: WIZARD =================
 function renderWizard() {
   const root = document.getElementById('tab-wizard');
@@ -1633,6 +1786,7 @@ function renderSync() {
 const renderers = {
   plan: renderPlan,
   wms: renderWMS,
+  products: renderProducts,
   fact: renderFact,
   audit: renderAudit,
   wizard: renderWizard,
