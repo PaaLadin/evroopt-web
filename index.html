@@ -2041,6 +2041,18 @@ document.getElementById('w-fill-wms').addEventListener('click', () => {
   });
 
   document.getElementById('w-gen').addEventListener('click', () => {
+    // Автозаполнение WMS из склада, если пусто
+    const wmsTa = document.getElementById('w-wms-snapshot');
+    if (wmsTa && !wmsTa.value.trim()) {
+      const lines = [];
+      for (const [pid, have] of Object.entries(S.wms || {})) {
+        if (+have <= 0) continue;
+        const pr = productById(+pid);
+        if (!pr) continue;
+        lines.push('- ' + pr.name + ': ' + have + ' ' + (pr.unit || ''));
+      }
+      if (lines.length) wmsTa.value = lines.join('\n');
+    }
     const prompt = buildPrompt();
     document.getElementById('w-prompt').value = prompt;
     toast('Промт готов');
@@ -2291,8 +2303,13 @@ function buildPrompt() {
 - Период плана: ${startDate} .. ${endDate} (${days} дней)
 - Ограничения: ${constraints || 'нет'}
 
-## Что есть дома (учти — уменьшай закупку на этот остаток)
-${wms || '(пусто)'}
+## Что есть дома
+Также учти продукты, которые уже закуплены в прошлом месяце и есть в наличии на складе.
+${wms || ''}
+
+ВАЖНО:
+- Если блок пуст — считай, что дома ничего нет.
+- Если есть данные — учитывай как ОБЩИЙ ресурс на весь период меню. НЕ используй один продукт больше, чем его есть на складе, суммарно по всем дням (2 кг лука на 15 дней — распределяй пропорционально, а не 1 луковица на каждое блюдо).
 
 ## ПРАВИЛА ЕДИНИЦ ИЗМЕРЕНИЯ (соблюдать строго)
 
@@ -2344,9 +2361,12 @@ ${wms || '(пусто)'}
 
 Учитывай что есть дома (блок выше) — НЕ покупай заново то, чего и так хватает. Если дома 1.5 кг сахара, а нужно 2 кг — купи только 0.5 кг.
 
-## Формат ответа — СТРОГО JSON (без markdown, без пояснений)
+## Формат ответа
 
-~~~json
+Ответ — СТРОГО в ОДНОМ code-блоке, начинающемся с ```json и заканчивающемся ```.
+Никакого текста до или после блока. Никаких комментариев внутри JSON.
+
+```json
 {
   "period": { "from": "${startDate}", "to": "${endDate}", "days": ${days} },
   "budget": ${budget},
@@ -2390,7 +2410,7 @@ ${wms || '(пусто)'}
     }
   ]
 }
-~~~
+```
 
 Перед отправкой проверь:
 1. Все unit — только кг/л/шт/уп
@@ -2399,7 +2419,7 @@ ${wms || '(пусто)'}
 4. plan_price_total = target_qty × plan_price_per_unit
 5. Сумма всех plan_price_total ≤ ${budget}
 
-Отвечай ТОЛЬКО JSON. Никаких объяснений до или после.`;
+Повторяю: ответ — ТОЛЬКО один code-блок ```json ... ```. Никакого текста до или после.`;
 }
 // ================= RENDER: SYNC =================
 function renderSync() {
