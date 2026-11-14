@@ -3408,10 +3408,13 @@ function openMenuDay(dateISO) {
         html += '</ul></details>';
       }
       // Кнопка "Приготовлено"
+      const midx = meals.indexOf(m);
       if (m._cooked) {
         html += '<div style="margin-top:6px;font-size:11px;color:var(--green)">✓ Приготовлено (' + (m._cooked_at || '').slice(0, 16).replace('T', ' ') + ')</div>';
+        if (S.role === 'admin' || S.role === 'buyer') {
+          html += '<button class="btn" data-uncook="' + midx + '" data-date="' + dateISO + '" data-plan="' + plan.id + '" style="margin-top:4px;font-size:11px;padding:4px 10px">↩ Отменить</button>';
+        }
       } else if (S.role === 'admin' || S.role === 'buyer') {
-        const midx = meals.indexOf(m);
         html += '<button class="btn" data-mark-cooked="' + midx + '" data-date="' + dateISO + '" data-plan="' + plan.id + '" style="margin-top:6px;font-size:11px;padding:4px 10px">✓ Приготовлено</button>';
       }
       html += '</div>';
@@ -3434,6 +3437,12 @@ function openMenuDay(dateISO) {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       markCooked(+btn.dataset.plan, btn.dataset.date, +btn.dataset.markCooked);
+    });
+  });
+  document.querySelectorAll('[data-uncook]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      unconsumedMeal(+btn.dataset.plan, btn.dataset.date, +btn.dataset.uncook);
     });
   });
 }
@@ -3513,6 +3522,60 @@ async function markCooked(planId, dateISO, mealIdx) {
       toast('Ошибка списания: ' + e.message, 5000);
     }
   });
+}
+
+
+// ================= MENU: отмена приготовления =================
+async function unconsumedMeal(planId, dateISO, mealIdx) {
+  const plan = (S.mealPlans || []).find(p => p.id === planId);
+  if (!plan) { toast('План не найден'); return; }
+  const data = plan.json_data || {};
+  const days = data.days || [];
+  const day = days.find(d => d.date === dateISO);
+  if (!day) { toast('День не найден'); return; }
+  const meal = (day.meals || [])[mealIdx];
+  if (!meal) { toast('Блюдо не найдено'); return; }
+
+  const sourcePrefix = 'meal_consumption:' + planId + ':' + dateISO + ':' + mealIdx;
+  if (!confirm('Отменить списание за «' + meal.name + '»? Продукты вернутся на склад.')) return;
+
+  try {
+    // 1) Найти все записи списания для этого блюда
+    const r = await api('/rest/v1/wms_history?select=id,product_id,delta_qty,source&source=like.' + encodeURIComponent(sourcePrefix + '%') + '&reason=eq.meal_consumption');
+    if (!r || !r.length) { toast('Нет записей списания для отмены'); return; }
+    // 2) Вернуть каждый продукт (delta_qty был отрицательный — вернём плюс)
+    let ok = 0;
+    for (const rec of r) {
+      try {
+        await api('/rest/v1/rpc/apply_wms_delta', {
+          method: 'POST',
+          body: {
+            p_product_id: rec.product_id,
+            p_delta: -(+rec.delta_qty),   // отрицательный -> положительный
+            p_reason: 'meal_unconsumption',
+            p_source: 'revert:' + rec.source + ':' + rec.id,
+            p_author: S.user?.email || 'unknown'
+          }
+        });
+        S.wms[rec.product_id] = (S.wms[rec.product_id] || 0) - (+rec.delta_qty);
+        ok++;
+      } catch (e) {
+        console.warn('revert fail', rec.id, e);
+      }
+    }
+    // 3) Снять _cooked в json_data
+    delete meal._cooked;
+    delete meal._cooked_at;
+    await api('/rest/v1/meal_plans?id=eq.' + planId, {
+      method: 'PATCH',
+      body: { json_data: data }
+    });
+    toast('↩ Возвращено ' + ok + ' продуктов на склад');
+    await loadAll();
+    closeModal();
+  } catch (e) {
+    toast('Ошибка отмены: ' + e.message, 5000);
+  }
 }
 
 </script>
