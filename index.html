@@ -1987,11 +1987,12 @@ function renderWizard() {
       <p class="muted" style="margin:0 0 10px">Заполни параметры → скопируй промт → отправь ИИ (ChatGPT, Qwen, DeepSeek) → получи JSON → вставь ниже → загрузи в БД.</p>
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
         <div><label>Семья (чел.)</label><input type="number" id="w-family" value="7" min="1"></div>
-        <div><label>Бюджет (BYN)</label><input type="number" id="w-budget" value="1800" step="1"></div>
+        <div><label>Бюджет</label><input type="number" id="w-budget" value="1800" step="1"></div>
         <div><label>Город</label><input type="text" id="w-city" value="Брест"></div>
         <div><label>Магазин</label><input type="text" id="w-store" value="Евроопт"></div>
         <div><label>Каждые N дней</label><input type="number" id="w-frequency" value="2" min="1"></div>
         <div><label>Дней в плане</label><input type="number" id="w-days" value="30" min="7"></div>
+        <div><label>Дата первого похода</label><input type="date" id="w-start-date"></div>
       </div>
       <label>Ограничения (свободный текст)</label>
       <textarea id="w-constraints" rows="2" placeholder="без свинины, меньше сахара, больше овощей..."></textarea>
@@ -2022,7 +2023,13 @@ function renderWizard() {
     </div>
   `;
 
-  document.getElementById('w-fill-wms').addEventListener('click', () => {
+  // п: дата первого похода — по умолчанию сегодня
+  (function initStartDate(){
+    const inp = document.getElementById('w-start-date');
+    if (inp && !inp.value) inp.value = new Date().toISOString().slice(0, 10);
+  })();
+
+document.getElementById('w-fill-wms').addEventListener('click', () => {
     const lines = [];
     for (const [pid, have] of Object.entries(S.wms)) {
       if (+have <= 0) continue;
@@ -2071,7 +2078,7 @@ function renderWizard() {
       S.wizardResult = data;
       const preview = validatePlan(data);
       const html = '<div class="card" style="background:var(--card2)">' +
-        '<div><b>' + preview.trips + '</b> походов, <b>' + preview.items + '</b> позиций, план <b>' + fmt(preview.total) + ' BYN</b></div>' +
+        '<div><b>' + preview.trips + '</b> походов, <b>' + preview.items + '</b> позиций, план <b>' + fmt(preview.total) + '</b></div>' +
         (preview.first ? '<div class="muted" style="margin-top:6px">Первый: ' + preview.first.date + ' — ' + preview.first.items + ' позиций</div>' : '') +
         '</div>';
       document.getElementById('w-preview').innerHTML = html;
@@ -2264,18 +2271,24 @@ function buildPrompt() {
   const days = document.getElementById('w-days').value;
   const constraints = document.getElementById('w-constraints').value;
   const wms = document.getElementById('w-wms-snapshot').value;
+  const startInput = document.getElementById('w-start-date');
+  const startDate = (startInput && startInput.value) ? startInput.value : new Date().toISOString().slice(0, 10);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Конец периода = startDate + days
+  const _sd = new Date(startDate + 'T00:00:00');
+  _sd.setDate(_sd.getDate() + (parseInt(days, 10) || 30) - 1);
+  const endDate = _sd.toISOString().slice(0, 10);
 
   return `# Задание: составить план закупок продуктов
 
 ## Параметры
 - Семья: ${family} человек
-- Бюджет на питание: ${budget} BYN на ${days} дней
+- Бюджет на питание: ${budget} (валюта — по магазину и городу)
 - Город: ${city}
 - Магазин: ${store}
 - Частота походов: каждые ${freq} дня
-- Старт: ${today}
+- Дата первого похода: ${startDate}
+- Период плана: ${startDate} .. ${endDate} (${days} дней)
 - Ограничения: ${constraints || 'нет'}
 
 ## Что есть дома (учти — уменьшай закупку на этот остаток)
@@ -2310,7 +2323,7 @@ ${wms || '(пусто)'}
 - Товар «в упаковке без указания веса» (например, разрыхлитель 1 пакетик) → уп
 
 ### Правила для plan_price_per_unit
-- Цена за ОДНУ единицу, а не за упаковку. Если пачка масла 180 г стоит 4.20 BYN — plan_price_per_unit = 4.20 / 0.18 = 23.33 (цена за кг)
+- Цена за ОДНУ единицу, а не за упаковку. Если пачка масла 180 г стоит 4.20 — plan_price_per_unit = 4.20 / 0.18 = 23.33 (цена за кг)
 - plan_price_total = target_qty × plan_price_per_unit (проверь: сумма должна совпадать с реальной ценой упаковки)
 - Цены — актуальные на дату составления плана, проверяй по каталогу ${store} (${city}). Не выдумывай, не бери средние по РФ
 
@@ -2323,7 +2336,9 @@ ${wms || '(пусто)'}
 
 ## Задача
 
-Составь план закупок на ${days} дней. Раздели на походы каждые ${freq} дня:
+Составь план закупок на ${days} дней. Первый поход = ${startDate}, далее каждые ${freq} дня до ${endDate}:
+- ПЕРВЫЙ поход — обязательно ${startDate} (дата из параметров).
+- Последующие походы — строго +${freq} дней от предыдущего (${startDate}, +${freq}д, +${freq}д … до ${endDate}).
 - Первый поход = базовая закупка (крупы, масло, сахар, мука, чай, консервы и т.д. — запас на весь период)
 - Дальше = свежее (мясо, молочка, овощи, фрукты, хлеб)
 
@@ -2333,8 +2348,8 @@ ${wms || '(пусто)'}
 
 ~~~json
 {
-  "period": { "from": "${today}", "to": "<YYYY-MM-DD>", "days": ${days} },
-  "budget_byn": ${budget},
+  "period": { "from": "${startDate}", "to": "${endDate}", "days": ${days} },
+  "budget": ${budget},
   "family_size": ${family},
   "store": "${store}",
   "city": "${city}",
@@ -2382,7 +2397,7 @@ ${wms || '(пусто)'}
 2. Весовые продукты (масло, творог, сметана, сыр, паста, чай, какао, повидло) — в кг
 3. plan_price_per_unit — цена за единицу, а не за упаковку
 4. plan_price_total = target_qty × plan_price_per_unit
-5. Сумма всех plan_price_total ≤ ${budget} BYN
+5. Сумма всех plan_price_total ≤ ${budget}
 
 Отвечай ТОЛЬКО JSON. Никаких объяснений до или после.`;
 }
