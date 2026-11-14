@@ -3159,11 +3159,9 @@ const renderers = {
   fact: renderFact,
   audit: renderAudit,
   wizard: renderWizard,
-  sync: renderSync,
-};
+  sync: renderSync, menu: renderMenu};
 
 function switchTab(name) {
-  if (name === 'menu') { renderMenu(); return; }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
   const target = document.getElementById('tab-' + name);
