@@ -3109,7 +3109,7 @@ const renderers = {
 };
 
 function switchTab(name) {
-  if (tab === 'menu') { renderMenu(); return; }
+  if (name === 'menu') { renderMenu(); return; }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
   const target = document.getElementById('tab-' + name);
