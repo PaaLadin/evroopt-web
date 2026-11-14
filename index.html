@@ -1128,6 +1128,18 @@ async function approveToStock(tid) {
       method: 'POST',
       body: { p_trip_id: tid, p_author: S.user?.email }
     });
+    // 3) Восстановить bought_weight (admin_approve_purchases его очищает, но вес нужен в истории).
+    const weightSnapshot = payload.filter(x => x.bought_weight);
+    for (const w of weightSnapshot) {
+      try {
+        await api('/rest/v1/trip_items?id=eq.' + w.trip_item_id, {
+          method: 'PATCH',
+          body: { bought_weight: w.bought_weight }
+        });
+      } catch (e) {
+        console.warn('weight restore fail', w.trip_item_id, e);
+      }
+    }
     toast('✅ Принято: ' + res.purchases_created + ' покупок, WMS обновлён, цены в базе обновлены');
     await loadAll();
     closeModal();
