@@ -3407,6 +3407,13 @@ function openMenuDay(dateISO) {
         }
         html += '</ul></details>';
       }
+      // Кнопка "Приготовлено"
+      if (m._cooked) {
+        html += '<div style="margin-top:6px;font-size:11px;color:var(--green)">✓ Приготовлено (' + (m._cooked_at || '').slice(0, 16).replace('T', ' ') + ')</div>';
+      } else if (S.role === 'admin' || S.role === 'buyer') {
+        const midx = meals.indexOf(m);
+        html += '<button class="btn" data-mark-cooked="' + midx + '" data-date="' + dateISO + '" data-plan="' + plan.id + '" style="margin-top:6px;font-size:11px;padding:4px 10px">✓ Приготовлено</button>';
+      }
       html += '</div>';
     }
     // Batch-блюда, которые ещё остаются
@@ -3421,6 +3428,91 @@ function openMenuDay(dateISO) {
   }
   html += '<button class="btn" style="margin-top:14px;width:100%" onclick="closeModal()">Закрыть</button>';
   modal(html);
+
+  // Привязка кнопок "Приготовлено"
+  document.querySelectorAll('[data-mark-cooked]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      markCooked(+btn.dataset.plan, btn.dataset.date, +btn.dataset.markCooked);
+    });
+  });
+}
+
+
+// ================= MENU: приготовлено / списание =================
+async function markCooked(planId, dateISO, mealIdx) {
+  const plan = (S.mealPlans || []).find(p => p.id === planId);
+  if (!plan) { toast('План не найден'); return; }
+  const data = plan.json_data || {};
+  const days = data.days || [];
+  const day = days.find(d => d.date === dateISO);
+  if (!day) { toast('День не найден'); return; }
+  const meal = (day.meals || [])[mealIdx];
+  if (!meal) { toast('Блюдо не найдено'); return; }
+
+  // Собираем списания (unit != 'уп')
+  const toSpend = [];
+  for (const ing of (meal.ingredients || [])) {
+    const isUp = (ing.unit || '').toLowerCase() === 'уп';
+    if (isUp) continue;
+    const prod = (S.products || []).find(p => p.name.toLowerCase() === (ing.product_name || '').toLowerCase());
+    if (!prod) continue;
+    const qty = (+ing.qty || 0) * (+meal.servings || 1);
+    if (qty <= 0) continue;
+    toSpend.push({ product_id: prod.id, name: prod.name, qty, unit: ing.unit, before: (S.wms[prod.id] || 0) });
+  }
+  if (!toSpend.length) { toast('Нет продуктов для списания'); return; }
+
+  // Модалка-предпросмотр
+  let html = '<h3 style="margin-top:0">✓ Приготовлено: ' + esc(meal.name) + '</h3>';
+  html += '<p class="muted" style="margin:0 0 10px;font-size:12px">Списать со склада (' + dateISO + ')?</p>';
+  html += '<table style="width:100%;font-size:12px"><thead><tr><th>Продукт</th><th class="num">Списать</th><th class="num">Остаток</th></tr></thead><tbody>';
+  for (const sp of toSpend) {
+    const after = sp.before - sp.qty;
+    const warn = after < 0 ? ' color:var(--red)' : '';
+    html += '<tr><td>' + esc(sp.name) + '</td><td class="num">' + sp.qty.toFixed(3) + ' ' + esc(sp.unit) + '</td><td class="num" style="' + warn + '">' + sp.before.toFixed(3) + ' → ' + after.toFixed(3) + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  html += '<div class="flex" style="margin-top:14px;gap:6px">';
+  html += '<button class="btn green" id="cook-confirm" style="flex:1">✓ Подтвердить списание</button>';
+  html += '<button class="btn" id="cook-cancel" style="flex:1">Отмена</button>';
+  html += '</div>';
+  modal(html);
+
+  document.getElementById('cook-cancel').addEventListener('click', closeModal);
+
+  document.getElementById('cook-confirm').addEventListener('click', async () => {
+    try {
+      const source = 'meal_consumption:' + planId + ':' + dateISO + ':' + mealIdx;
+      let ok = 0;
+      for (const sp of toSpend) {
+        const res = await api('/rest/v1/rpc/apply_wms_delta', {
+          method: 'POST',
+          body: {
+            p_product_id: sp.product_id,
+            p_delta: -sp.qty,
+            p_reason: 'meal_consumption',
+            p_source: source,
+            p_author: S.user?.email || 'unknown'
+          }
+        });
+        ok++;
+        S.wms[sp.product_id] = (S.wms[sp.product_id] || 0) - sp.qty;
+      }
+      toast('✅ Списано ' + ok + ' продуктов. Отмена: см. историю склада.');
+      // Помечаем блюдо как приготовленное (в json_data)
+      meal._cooked = true;
+      meal._cooked_at = new Date().toISOString();
+      await api('/rest/v1/meal_plans?id=eq.' + planId, {
+        method: 'PATCH',
+        body: { json_data: data }
+      });
+      await loadAll();
+      closeModal();
+    } catch (e) {
+      toast('Ошибка списания: ' + e.message, 5000);
+    }
+  });
 }
 
 </script>
