@@ -28,6 +28,9 @@ h1{font-size:15px;margin:0;font-weight:600}
 .tabs{display:flex;border-top:1px solid var(--line);overflow-x:auto}
 .tabs button{flex:1 0 auto;background:transparent;border:0;color:var(--muted);padding:11px 12px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
 .tabs button.active{color:var(--blue);border-bottom-color:var(--blue);background:rgba(88,166,255,.05)}
+.tab-badge{display:none;background:var(--blue);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;font-weight:600}
+.tab-badge.on{display:inline-block}
+.tab-badge.red{background:var(--red)}
 main{padding:12px 10px 80px;max-width:1400px;margin:0 auto}
 .tab-content{display:none}
 .tab-content.active{display:block}
@@ -130,12 +133,12 @@ a:hover{text-decoration:underline}
     <button id="hdr-logout" class="btn" style="margin-left:10px;padding:6px 12px;font-size:13px;display:none" title="Выйти из аккаунта">🚪 Выйти</button>
   </div>
   <div class="tabs" id="tabs" style="display:none">
-    <button data-tab="plan" class="active">📋 План</button>
-    <button data-tab="catalog">🏠 Склад</button>
-    <button data-tab="fact">🛒 Покупки</button>
-    <button data-tab="menu">📅 Меню</button>
+    <button data-tab="catalog" class="active">🏠 Склад <span class="tab-badge" id="badge-catalog"></span></button>
+    <button data-tab="plan">📋 План <span class="tab-badge" id="badge-plan"></span></button>
+    <button data-tab="fact">🛒 Покупки <span class="tab-badge" id="badge-fact"></span></button>
+    <button data-tab="menu">📅 Меню <span class="tab-badge" id="badge-menu"></span></button>
     <button data-tab="audit">📊 Аудит</button>
-    <button data-tab="wizard">🔧 Мастер</button>
+    <button data-tab="wizard">🔧 Мастер <span class="tab-badge" id="badge-wizard"></span></button>
     <button data-tab="sync">🔄 Синхро</button>
   </div>
 </header>
@@ -328,6 +331,38 @@ async function loadAll() {
   S.mealPlans = mealPlans || [];
   S.wms = {};
   for (const w of (wms || [])) S.wms[w.product_id] = +w.have_qty || 0;
+  updateBadges();
+}
+
+function updateBadges() {
+  function set(id, val, red) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!val || val <= 0) { el.classList.remove('on', 'red'); el.textContent = ''; return; }
+    el.textContent = val;
+    el.classList.add('on');
+    if (red) el.classList.add('red'); else el.classList.remove('red');
+  }
+  // Склад: продуктов с остатком
+  const wmsCount = Object.values(S.wms || {}).filter(x => +x > 0).length;
+  set('badge-catalog', wmsCount);
+  // План: походы в awaiting_review (красный), иначе общее количество
+  const awaiting = (S.trips || []).filter(t => t.status === 'awaiting_review').length;
+  const totalTrips = (S.trips || []).length;
+  set('badge-plan', awaiting > 0 ? awaiting : (totalTrips > 0 ? totalTrips : 0), awaiting > 0);
+  // Покупки: суммарно purchases
+  const pchCount = (S.purchases || []).length;
+  set('badge-fact', pchCount);
+  // Меню: дней в последнем плане
+  let menuDays = 0;
+  if (S.mealPlans && S.mealPlans.length) {
+    const d = S.mealPlans[0].json_data || {};
+    menuDays = (d.days || []).length;
+  }
+  set('badge-menu', menuDays);
+  // Мастер: позиции approved без отчёта (требуют внимания)
+  const approvedTrips = (S.trips || []).filter(t => t.status === 'approved').length;
+  set('badge-wizard', approvedTrips > 0 ? approvedTrips : 0);
 }
 
 function productById(id) { return S.products.find(p => p.id === id); }
@@ -3262,7 +3297,7 @@ async function enterApp() {
     toast('Ошибка загрузки: ' + e.message, 5000);
   }
 
-  const first = S.role === 'buyer' ? 'fact' : 'plan';
+  const first = S.role === 'buyer' ? 'fact' : 'catalog';
   switchTab(first);
 }
 // Глобально
