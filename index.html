@@ -2015,8 +2015,20 @@ function renderWizard() {
     </div>
 
     <div class="card">
+      <h2>📥 Импорт плана покупок от ИИ</h2>
+      <p class="muted" style="margin:0 0 10px">Вставь JSON плана покупок от ИИ (ответ на промт выше, можно с \`\`\`json обёрткой) или загрузи файл.</p>
+      <textarea id="w-in" rows="10" placeholder='{"trips":[...]}' style="font-family:monospace;font-size:11px"></textarea>
+      <div class="flex" style="margin-top:8px">
+        <input type="file" id="w-file" accept=".json,.txt,.md" style="flex:1;min-width:200px">
+        <button class="btn primary" id="w-validate">✅ Валидировать</button>
+      </div>
+      <div id="w-preview" style="margin-top:10px"></div>
+      <button class="btn green" id="w-import" style="margin-top:10px;display:none;width:100%">📤 Загрузить в БД</button>
+    </div>
+
+    <div class="card">
       <h2>🍲 Мастер: промт меню питания</h2>
-      <p class="muted" style="margin:0 0 10px">Сначала импортируй план покупок (выше). Потом сгенерируй промт для меню — ИИ учтёт, что куплено, что есть дома, и составит календарь питания.</p>
+      <p class="muted" style="margin:0 0 10px">Перед этим блоком импортируй план покупок — он используется как база. Потом сгенерируй промт для меню — ИИ учтёт, что куплено, что есть дома, и составит календарь питания.</p>
       <div class="flex" style="margin-bottom:10px">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
           <input type="checkbox" id="w-menu-4weeks" checked>
@@ -2042,18 +2054,6 @@ function renderWizard() {
       </div>
       <div id="w-menu-preview" style="margin-top:10px"></div>
       <button class="btn green" id="w-menu-import" style="margin-top:10px;display:none;width:100%">📤 Сохранить меню в БД</button>
-    </div>
-
-    <div class="card">
-      <h2>📥 Импорт ответа от ИИ</h2>
-      <p class="muted" style="margin:0 0 10px">Вставь JSON от ИИ (можно с \`\`\`json обёрткой) или загрузи файл.</p>
-      <textarea id="w-in" rows="10" placeholder='{"trips":[...]}' style="font-family:monospace;font-size:11px"></textarea>
-      <div class="flex" style="margin-top:8px">
-        <input type="file" id="w-file" accept=".json,.txt,.md" style="flex:1;min-width:200px">
-        <button class="btn primary" id="w-validate">✅ Валидировать</button>
-      </div>
-      <div id="w-preview" style="margin-top:10px"></div>
-      <button class="btn green" id="w-import" style="margin-top:10px;display:none;width:100%">📤 Загрузить в БД</button>
     </div>
   `;
 
@@ -2252,10 +2252,16 @@ document.getElementById('w-fill-wms').addEventListener('click', () => {
 }
 
 function extractJson(text) {
-  // вырезаем \`\`\`json ... \`\`\` если есть
-  let t = text.trim();
+  let t = (text || '').trim();
+  // 1) Если есть code-block - берём содержимое
   const m = t.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/);
   if (m) t = m[1].trim();
+  // 2) Если начинается с { - вырезаем от первой { до последней }
+  const first = t.indexOf('{');
+  const last = t.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    t = t.substring(first, last + 1);
+  }
   return t;
 }
 
@@ -2650,7 +2656,20 @@ ${tripsJson.map(t => {
   return '### Поход ' + t.date + ' (' + (t.kind || 'base') + ') — появится вечером ' + t.date + '\n' + lines.join('\n');
 }).filter(Boolean).join('\n\n')}
 
-**ВАЖНО про время:** Продукты похода в день X появляются на складе ВЕЧЕРОМ дня X. Меню на день X может использовать ТОЛЬКО продукты, купленные ВЧЕРА или РАНЬШЕ (походы с датой < X). НЕЛЬЗЯ ставить блюдо из рыбы на день 1, если рыба будет куплена вечером дня 1 — она появится только к дню 2.
+**КРИТИЧНО ПРО ВРЕМЯ:** Продукты похода в день X появляются на складе ВЕЧЕРОМ дня X. Меню на день X может использовать ТОЛЬКО продукты из походов с датой < X (строго меньше, не «равно»).
+
+ПРИМЕР:
+- Поход 05.12 приносит рыбу (минтай 1.5 кг) вечером 05.12.
+- Рыба НЕ доступна для ОБЕДА 05.12.
+- Рыба доступна с ЗАВТРАКА 06.12 (то есть с даты > 05.12).
+
+ЗАПРЕЩЕНО:
+- Ставить блюдо из продукта похода дня X на обед/ужин дня X.
+- Ставить блюдо из продукта похода дня X на завтрак дня X (даже утром продукты ещё не пришли).
+
+РАЗРЕШЕНО:
+- Использовать продукт из похода дня X для блюд дня X+1 и позже.
+- Использовать WMS-остатки из прошлого месяца без ограничений (они уже на складе).
 
 ## Что есть дома
 Также учти продукты, которые уже закуплены в прошлом месяце и есть в наличии на складе.
@@ -2722,7 +2741,7 @@ ${productNamesList.map(n => '- ' + n).join('\n')}
 1. Все дни ${weekFrom} .. ${weekTo} есть в days[].
 2. В каждом дне 3-4 приёма: breakfast, lunch, dinner, (snack).
 3. Нет продуктов, которых нет в покупках/WMS.
-4. Нет блюд «сегодня утром» из продуктов, которые купят «сегодня вечером».
+4. Нет блюд «сегодня» (включая обед и ужин!) из продуктов, которые купят «сегодня вечером». Каждый день: только походы с датой < этой даты.
 5. Пропорции укладываются в WMS + купленное.
 6. Использованы ТОЧНЫЕ названия из списка выше.
 7. Ответ — ТОЛЬКО один code-блок JSON. Никакого текста до или после.
