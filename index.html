@@ -340,6 +340,7 @@ function renderPlan() {
     html += '<div class="flex" style="margin-bottom:10px;flex-wrap:wrap">';
     html += '<button class="btn primary" id="add-trip-btn">+ Добавить поход</button>';
     html += '<button class="btn" id="reload-btn">🔄 Обновить</button>';
+    html += '<button class="btn" id="refresh-all-prices-btn" title="Заменить все цены в черновиках на последние покупки">🔄 Цены</button>';
     html += '<button class="btn red" id="clear-trips-btn">🗑 Очистить походы</button>';
     html += '<button class="btn" id="clear-products-btn" title="Удалить продукты, которые не используются ни в одном походе">🧹 Неисп. продукты</button>';
     html += '</div>';
@@ -374,6 +375,8 @@ function renderPlan() {
   if (reloadBtn) reloadBtn.addEventListener('click', async () => {
     await loadAll(); renderPlan(); toast('Обновлено');
   });
+  const refreshAllBtn = document.getElementById('refresh-all-prices-btn');
+  if (refreshAllBtn) refreshAllBtn.addEventListener('click', refreshPricesAll);
   const clearBtn = document.getElementById('clear-trips-btn');
   if (clearBtn) clearBtn.addEventListener('click', clearAllTrips);
   const clearProdBtn = document.getElementById('clear-products-btn');
@@ -428,6 +431,7 @@ async function openTrip(tid) {
     html += '<button class="btn green" data-act="approve" data-tid="' + tid + '">✅ Утвердить</button>';
     html += '<button class="btn red" data-act="cancel" data-tid="' + tid + '">✖ Отменить</button>';
     html += '<button class="btn" data-act="additem" data-tid="' + tid + '">+ Позиция</button>';
+    html += '<button class="btn" data-act="refresh-prices" data-tid="' + tid + '" title="Заменить цены в этом походе на актуальные (из последних покупок)">🔄 Обновить цены</button>';
     html += '</div>';
   }
 
@@ -451,7 +455,7 @@ async function openTrip(tid) {
   html += '<div class="fact-table-desktop" style="overflow-x:auto"><table style="min-width:720px">';
   html += '<thead><tr>';
   if (canAdminEdit) html += '<th style="width:32px">Вкл</th>';
-  html += '<th>Товар</th><th class="hide-sm">Вес</th><th class="num" style="width:80px">Купить</th><th class="num hide-sm">Дома</th><th class="num">План</th>';
+  html += '<th>Товар</th><th class="hide-sm">Вес</th><th class="num" style="width:80px">Купить</th><th class="num hide-sm">Дома</th><th class="num">План</th><th class="num hide-sm">Актуал.</th>';
   if (canBuy || isReview || isDone) {
     html += '<th class="num" style="width:90px">Факт кол-во</th>';
     html += '<th class="num" style="width:90px">Факт ₽</th>';
@@ -487,6 +491,15 @@ async function openTrip(tid) {
     html += '</td>';
     html += '<td class="num hide-sm">' + fmt(have, 2) + '</td>';
     html += '<td class="num">' + fmt(planAdj, 2) + '</td>';
+
+    // Актуальная цена из справочника (если есть)
+    const actualPrice = p.last_price_per_unit;
+    const actualCell = actualPrice
+      ? (Math.abs(actualPrice - it.plan_price_per_unit) > 0.01
+          ? '<span style="color:var(--yellow)" title="Цена в плане отличается от последней покупки">' + fmt(actualPrice, 2) + ' ⚠</span>'
+          : '<span style="color:var(--green)">' + fmt(actualPrice, 2) + ' ✓</span>')
+      : '<span class="muted">—</span>';
+    html += '<td class="num hide-sm">' + actualCell + '</td>';
 
     if (canBuy) {
       // Поля ввода
@@ -590,6 +603,7 @@ function bindTripModal(tid) {
       if (act === 'approve-to-stock') return approveToStock(tid);
       if (act === 'reject-review') return rejectReview(tid);
       if (act === 'force-finish')  return forceFinish(tid);
+      if (act === 'refresh-prices') return refreshPrices(tid);
     });
   });
 
@@ -1094,6 +1108,63 @@ async function forceFinish(tid) {
     toast('Ошибка: ' + e.message, 5000);
   }
 }
+
+
+async function refreshPrices(tid) {
+  if (S.role !== 'admin') { toast('Только для админа'); return; }
+
+  // Сколько позиций нужно обновить?
+  const items = itemsByTrip(tid);
+  let affected = 0;
+  let same = 0;
+  for (const it of items) {
+    const p = productById(it.product_id);
+    if (!p || !p.last_price_per_unit) continue;
+    if (Math.abs((+p.last_price_per_unit) - (+it.plan_price_per_unit || 0)) > 0.01) affected++;
+    else same++;
+  }
+
+  if (affected === 0) {
+    toast('Все цены уже актуальны');
+    return;
+  }
+
+  if (!confirm('Обновить цены в этом походе?\n\nЗаменятся цены только в этом походе (draft). История покупок не тронется.\n\nОбновится позиций: ' + affected + ' из ' + items.length)) return;
+
+  try {
+    const res = await api('/rest/v1/rpc/refresh_plan_prices', {
+      method: 'POST',
+      body: { p_trip_ids: [tid], p_author: S.user?.email }
+    });
+    toast('🔄 Обновлено цен: ' + res.updated_items);
+    await loadAll();
+    closeModal();
+    openTrip(tid);   // переоткрыть чтобы увидеть изменения
+    renderPlan();
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 5000);
+  }
+}
+
+async function refreshPricesAll() {
+  if (S.role !== 'admin') { toast('Только для админа'); return; }
+  const draftTrips = S.trips.filter(t => t.status === 'draft');
+  if (!draftTrips.length) { toast('Нет черновиков'); return; }
+  if (!confirm('Обновить цены во ВСЕХ черновиках (' + draftTrips.length + ' походов)?\n\nИстория покупок не тронется.')) return;
+
+  try {
+    const res = await api('/rest/v1/rpc/refresh_plan_prices', {
+      method: 'POST',
+      body: { p_trip_ids: draftTrips.map(t => t.id), p_author: S.user?.email }
+    });
+    toast('🔄 Обновлено цен: ' + res.updated_items + ' в ' + draftTrips.length + ' походах');
+    await loadAll();
+    renderPlan();
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 5000);
+  }
+}
+
 // ================= RENDER: FACT =================
 function renderFact() {
   const root = document.getElementById('tab-fact');
@@ -1304,7 +1375,7 @@ function renderCatalog() {
       if (!isCollapsed) {
         html += '<div class="cat-body" style="margin-top:6px;margin-left:10px">';
         html += '<div style="overflow-x:auto"><table style="min-width:520px"><thead><tr>';
-        html += '<th>Продукт</th><th>Ед.</th><th class="num">Склад</th><th class="num">Поз.</th><th></th>';
+        html += '<th>Продукт</th><th>Ед.</th><th class="num">Склад</th><th class="num hide-sm">Цена</th><th class="num">Поз.</th><th></th>';
         html += '</tr></thead><tbody>';
 
         for (const p of filtered) {
@@ -1317,6 +1388,8 @@ function renderCatalog() {
           html += '<td class="num">';
           html += '<input type="number" step="0.001" value="' + (wmsQty || '') + '" placeholder="0" data-wms-pid="' + p.id + '" style="width:80px;padding:3px 5px;text-align:right;' + (hasStock ? 'color:var(--green)' : '') + '">';
           html += '</td>';
+          const lastPriceStr = p.last_price_per_unit ? fmt(p.last_price_per_unit, 2) + ' / ' + esc(p.unit) : '—';
+          html += '<td class="num hide-sm" style="color:' + (p.last_price_per_unit ? 'var(--green)' : 'var(--muted)') + '">' + lastPriceStr + '</td>';
           html += '<td class="num">' + u.tripItems + '</td>';
           html += '<td><button class="btn sm" data-edit="' + p.id + '">✏️</button></td>';
           html += '</tr>';
@@ -1427,7 +1500,7 @@ function editProduct(pid) {
 
   const tiCount = S.tripItems.filter(i => i.product_id === pid).length;
   const wmsQty = S.wms[pid] || 0;
-  const units = ['кг', 'л', 'шт', 'уп', 'г', 'мл'];
+  const units = ['кг', 'л', 'шт', 'уп'];
   const commonCategories = ['бакалея', 'молочка', 'мясо', 'овощи', 'фрукты', 'хлеб', 'прочее'];
 
   // Список всех категорий (включая редкие, что уже есть)
@@ -1469,6 +1542,13 @@ function editProduct(pid) {
     <label style="margin-top:10px">Остаток на складе</label>
     <input type="number" step="0.001" id="ep-wms" value="${wmsQty || 0}">
 
+    <label style="margin-top:10px">Актуальная цена за 1 ${esc(p.unit)} (BYN)</label>
+    <div style="display:flex;gap:6px;align-items:center">
+      <input type="number" step="0.01" id="ep-last-price" value="${p.last_price_per_unit || ''}" placeholder="—" style="flex:1">
+      ${p.last_price_at ? `<span class="muted" style="font-size:10px;white-space:nowrap">от ${new Date(p.last_price_at).toLocaleDateString('ru-RU')}</span>` : ''}
+    </div>
+    <div class="muted" style="font-size:10px;margin-top:2px">Используется как подсказка в планах. Обновляется автоматически при приёмке покупок.</div>
+
     <div id="ep-preview" style="margin-top:12px;padding:10px;background:var(--card2);border-radius:6px;font-size:12px">
       <div class="muted">Позиций в походах: ${tiCount} · в покупках: будет проверено при удалении</div>
     </div>
@@ -1491,6 +1571,7 @@ function editProduct(pid) {
   const coefInput = box.querySelector('#ep-coef');
   const coefUnit = box.querySelector('#ep-coef-unit');
   const wmsInput = box.querySelector('#ep-wms');
+  const lastPriceInput = box.querySelector('#ep-last-price');
   const preview = box.querySelector('#ep-preview');
 
   // Показать поле "новая категория" если выбрано __custom__
@@ -1518,6 +1599,9 @@ function editProduct(pid) {
     if (newUnit !== p.unit) changes.push('единица: ' + p.unit + ' → ' + newUnit);
     if (coef !== 1) changes.push('количество ×' + coef);
     if (newWms !== wmsQty) changes.push('остаток: ' + fmt(wmsQty, 3) + ' → ' + fmt(newWms, 3));
+    const newLastPrice = lastPriceInput.value === '' ? null : parseFloat(lastPriceInput.value);
+    const oldLastPrice = p.last_price_per_unit || null;
+    if (newLastPrice !== oldLastPrice) changes.push('актуальная цена: ' + (oldLastPrice || '—') + ' → ' + (newLastPrice || '—') + ' BYN');
 
     if (changes.length === 0) {
       preview.innerHTML = '<span class="muted">Нет изменений</span>';
@@ -1560,6 +1644,11 @@ function editProduct(pid) {
       if (newName !== p.name) patch.name = newName;
       if (newBrand !== (p.brand || null)) patch.brand = newBrand;
       if (newCat !== (p.category || 'прочее').trim().toLowerCase()) patch.category = newCat;
+      const newLastPrice = lastPriceInput.value === '' ? null : parseFloat(lastPriceInput.value);
+      if (newLastPrice !== (p.last_price_per_unit || null)) {
+        patch.last_price_per_unit = newLastPrice;
+        if (newLastPrice !== null) patch.last_price_at = new Date().toISOString();
+      }
 
       if (Object.keys(patch).length > 0) {
         await api('/rest/v1/products?id=eq.' + pid, {
