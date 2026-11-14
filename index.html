@@ -2291,13 +2291,25 @@ function extractJson(text) {
   // 1) Если есть code-block - берём содержимое
   const m = t.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/);
   if (m) t = m[1].trim();
-  // 2) Если начинается с { - вырезаем от первой { до последней }
+  // 2) Балансировка фигурных скобок: найти первую { и соответствующую ей }
   const first = t.indexOf('{');
-  const last = t.lastIndexOf('}');
-  if (first >= 0 && last > first) {
-    t = t.substring(first, last + 1);
+  if (first < 0) return t;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = first; i < t.length; i++) {
+    const ch = t[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return t.substring(first, i + 1);
+    }
   }
-  return t;
+  return t.substring(first);
 }
 
 function validatePlan(data) {
