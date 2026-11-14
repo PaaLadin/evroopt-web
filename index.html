@@ -1085,6 +1085,7 @@ async function approveToStock(tid) {
   if (!confirm('Принять на склад?\n\nСоздадутся записи в purchases, обновится WMS, поход закроется.')) return;
   try {
     // 1) Сохранить текущие правки admin (цены/вес/кол-во) в trip_items.bought_*
+    //    Иначе admin_approve_purchases возьмёт пустой bought_price.
     const items = itemsByTrip(tid);
     const payload = [];
     for (const it of items) {
@@ -1103,38 +1104,12 @@ async function approveToStock(tid) {
         body: { p_trip_id: tid, p_items: payload, p_author: S.user?.email }
       });
     }
-    // Запомним цены для последующего PATCH products (обход неприменённого SQL 005)
-    const priceSnapshot = payload.map(x => {
-      const it = items.find(i => i.id === x.trip_item_id);
-      return {
-        product_id: it ? it.product_id : null,
-        bought_qty: x.bought_qty,
-        bought_price: x.bought_price === '' ? null : +x.bought_price
-      };
-    }).filter(x => x.product_id && x.bought_price !== null && x.bought_qty > 0);
-
-    // 2) Принять
+    // 2) Принять. SQL 005 обновляет products.last_price_per_unit — проверено тестом 2026-11-14.
     const res = await api('/rest/v1/rpc/admin_approve_purchases', {
       method: 'POST',
       body: { p_trip_id: tid, p_author: S.user?.email }
     });
-
-    // 3) Обновить products.last_price_per_unit (SQL 005 fallback)
-    let priceUpdated = 0;
-    for (const ps of priceSnapshot) {
-      const ppu = +(ps.bought_price / ps.bought_qty).toFixed(2);
-      try {
-        await api('/rest/v1/products?id=eq.' + ps.product_id, {
-          method: 'PATCH',
-          body: { last_price_per_unit: ppu, last_price_at: new Date().toISOString() }
-        });
-        priceUpdated++;
-      } catch (e) {
-        console.warn('price update failed for product', ps.product_id, e);
-      }
-    }
-
-    toast('✅ Принято: ' + res.purchases_created + ' покупок, WMS обновлён' + (priceUpdated ? ', цены в базе: ' + priceUpdated : ''));
+    toast('✅ Принято: ' + res.purchases_created + ' покупок, WMS обновлён, цены в базе обновлены');
     await loadAll();
     closeModal();
     renderPlan();
