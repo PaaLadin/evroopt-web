@@ -2011,6 +2011,36 @@ function renderWizard() {
     </div>
 
     <div class="card">
+      <h2>🍲 Мастер: промт меню питания</h2>
+      <p class="muted" style="margin:0 0 10px">Сначала импортируй план покупок (выше). Потом сгенерируй промт для меню — ИИ учтёт, что куплено, что есть дома, и составит календарь питания.</p>
+      <div class="flex" style="margin-bottom:10px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="w-menu-4weeks" checked>
+          Разбить на 4 недели (7+8+7+8)
+        </label>
+      </div>
+      <div class="flex">
+        <button class="btn primary" id="w-menu-gen">🎯 Сгенерировать промт меню</button>
+        <button class="btn" id="w-menu-copy">📋 Скопировать</button>
+        <button class="btn" id="w-menu-download">💾 Скачать .md</button>
+      </div>
+      <label style="margin-top:10px">Промт меню для ИИ</label>
+      <textarea id="w-menu-prompt" rows="18" style="font-family:monospace;font-size:11px"></textarea>
+    </div>
+
+    <div class="card">
+      <h2>📥 Импорт меню от ИИ</h2>
+      <p class="muted" style="margin:0 0 10px">Вставь JSON меню от ИИ (ответ на промт выше) или загрузи файл. После валидации — сохрани в БД.</p>
+      <textarea id="w-menu-in" rows="10" placeholder='{"menu":{...},"days":[...],"batch_dishes":[...]}' style="font-family:monospace;font-size:11px"></textarea>
+      <div class="flex" style="margin-top:8px">
+        <input type="file" id="w-menu-file" accept=".json,.txt,.md" style="flex:1;min-width:200px">
+        <button class="btn primary" id="w-menu-validate">✅ Валидировать</button>
+      </div>
+      <div id="w-menu-preview" style="margin-top:10px"></div>
+      <button class="btn green" id="w-menu-import" style="margin-top:10px;display:none;width:100%">📤 Сохранить меню в БД</button>
+    </div>
+
+    <div class="card">
       <h2>📥 Импорт ответа от ИИ</h2>
       <p class="muted" style="margin:0 0 10px">Вставь JSON от ИИ (можно с \`\`\`json обёрткой) или загрузи файл.</p>
       <textarea id="w-in" rows="10" placeholder='{"trips":[...]}' style="font-family:monospace;font-size:11px"></textarea>
@@ -2103,6 +2133,118 @@ document.getElementById('w-fill-wms').addEventListener('click', () => {
   });
 
   document.getElementById('w-import').addEventListener('click', importPlan);
+
+  // ============= МЕНЮ: обработчики =============
+  const menuGen = document.getElementById('w-menu-gen');
+  if (menuGen) {
+    menuGen.addEventListener('click', () => {
+      try {
+        const fourWeeks = document.getElementById('w-menu-4weeks').checked;
+        const p = buildMenuPrompt(fourWeeks ? 1 : null);  // MVP: неделя 1 (или весь период)
+        document.getElementById('w-menu-prompt').value = p;
+        toast(fourWeeks ? 'Промт недели 1 готов' : 'Промт на весь период готов');
+      } catch (e) {
+        toast('Ошибка: ' + e.message, 5000);
+      }
+    });
+  }
+
+  const menuCopy = document.getElementById('w-menu-copy');
+  if (menuCopy) {
+    menuCopy.addEventListener('click', () => {
+      const ta = document.getElementById('w-menu-prompt');
+      if (!ta.value) { toast('Сначала сгенерируй'); return; }
+      navigator.clipboard.writeText(ta.value).then(() => toast('Скопировано'));
+    });
+  }
+
+  const menuDl = document.getElementById('w-menu-download');
+  if (menuDl) {
+    menuDl.addEventListener('click', () => {
+      const ta = document.getElementById('w-menu-prompt');
+      if (!ta.value) { toast('Сначала сгенерируй'); return; }
+      download(ta.value, 'koshik_menu_prompt.md', 'text/markdown');
+    });
+  }
+
+  // Импорт меню: file
+  const menuFile = document.getElementById('w-menu-file');
+  if (menuFile) {
+    menuFile.addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        document.getElementById('w-menu-in').value = r.result;
+        toast('Файл меню загружен');
+      };
+      r.readAsText(f);
+    });
+  }
+
+  // Валидация меню
+  const menuValidate = document.getElementById('w-menu-validate');
+  if (menuValidate) {
+    menuValidate.addEventListener('click', () => {
+      try {
+        const raw = document.getElementById('w-menu-in').value.trim();
+        if (!raw) { toast('Пусто'); return; }
+        const jsonStr = extractJson(raw);
+        const data = JSON.parse(jsonStr);
+        const preview = validateMenu(data);
+        S.menuWizardResult = data;
+        let html = '<div class="card" style="background:var(--card2)">';
+        html += '<div><b>' + preview.days + '</b> дней, <b>' + preview.meals + '</b> приёмов, <b>' + preview.batches + '</b> batch-блюд</div>';
+        if (preview.first) html += '<div class="muted" style="margin-top:6px">Первый день: ' + preview.first.date + ' (' + preview.first.count + ' блюд)</div>';
+        if (preview.warnings && preview.warnings.length) {
+          html += '<div style="margin-top:8px;padding:8px;background:rgba(210,153,34,0.1);border:1px solid var(--yellow);border-radius:4px;font-size:12px">';
+          html += '<b>Внимание (' + preview.warnings.length + '):</b><ul style="margin:4px 0 0 0;padding-left:18px">';
+          for (const w of preview.warnings.slice(0, 8)) html += '<li>' + esc(w) + '</li>';
+          if (preview.warnings.length > 8) html += '<li>... и ещё ' + (preview.warnings.length - 8) + '</li>';
+          html += '</ul></div>';
+        }
+        html += '</div>';
+        document.getElementById('w-menu-preview').innerHTML = html;
+        document.getElementById('w-menu-import').style.display = 'block';
+        toast('OK');
+      } catch (e) {
+        document.getElementById('w-menu-preview').innerHTML = '<div class="card" style="background:var(--card2);color:var(--red)">Ошибка: ' + esc(e.message) + '</div>';
+        document.getElementById('w-menu-import').style.display = 'none';
+      }
+    });
+  }
+
+  // Сохранение меню в БД
+  const menuImport = document.getElementById('w-menu-import');
+  if (menuImport) {
+    menuImport.addEventListener('click', async () => {
+      try {
+        const data = S.menuWizardResult;
+        if (!data) { toast('Сначала валидируй'); return; }
+        const period = (data.menu && data.menu.period) || {};
+        const weekNo = (data.menu && data.menu.week_no) || null;
+        const familySize = (data.menu && data.menu.family_size) || null;
+        if (!period.from || !period.to) throw new Error('В JSON нет menu.period.from / to');
+        await api('/rest/v1/meal_plans', {
+          method: 'POST',
+          body: {
+            plan_start: period.from,
+            plan_end: period.to,
+            week_no: weekNo,
+            family_size: familySize,
+            json_data: data,
+            created_by: S.user?.email || null
+          }
+        });
+        toast('✅ Меню сохранено в БД');
+        document.getElementById('w-menu-import').style.display = 'none';
+        document.getElementById('w-menu-in').value = '';
+        document.getElementById('w-menu-preview').innerHTML = '';
+      } catch (e) {
+        toast('Ошибка: ' + e.message, 5000);
+      }
+    });
+  }
 }
 
 function extractJson(text) {
@@ -2363,10 +2505,10 @@ ${wms || ''}
 
 ## Формат ответа
 
-Ответ — СТРОГО в ОДНОМ code-блоке, начинающемся с ```json и заканчивающемся ```.
+Ответ — СТРОГО в ОДНОМ code-блоке, начинающемся с \```json и заканчивающемся \```.
 Никакого текста до или после блока. Никаких комментариев внутри JSON.
 
-```json
+\```json
 {
   "period": { "from": "${startDate}", "to": "${endDate}", "days": ${days} },
   "budget": ${budget},
@@ -2410,7 +2552,7 @@ ${wms || ''}
     }
   ]
 }
-```
+\```
 
 Перед отправкой проверь:
 1. Все unit — только кг/л/шт/уп
@@ -2419,8 +2561,179 @@ ${wms || ''}
 4. plan_price_total = target_qty × plan_price_per_unit
 5. Сумма всех plan_price_total ≤ ${budget}
 
-Повторяю: ответ — ТОЛЬКО один code-блок ```json ... ```. Никакого текста до или после.`;
+Повторяю: ответ — ТОЛЬКО один code-блок \```json ... \```. Никакого текста до или после.`;
 }
+
+// ================= MENU PROMPT =================
+function buildMenuPrompt(weekNo) {
+  const family = document.getElementById('w-family').value;
+  const budget = document.getElementById('w-budget').value;
+  const city = document.getElementById('w-city').value;
+  const store = document.getElementById('w-store').value;
+  const freq = document.getElementById('w-frequency').value;
+  const days = document.getElementById('w-days').value;
+  const constraints = document.getElementById('w-constraints').value;
+  const wms = document.getElementById('w-wms-snapshot').value;
+  const startInput = document.getElementById('w-start-date');
+  const startDate = (startInput && startInput.value) ? startInput.value : new Date().toISOString().slice(0, 10);
+
+  // Диапазон для запрошенной недели
+  let weekFrom, weekTo, weekLabel;
+  if (weekNo === 1)      { weekLabel = 'Неделя 1 (7 дней)'; weekFrom = startDate; }
+  else if (weekNo === 2) { weekLabel = 'Неделя 2 (8 дней)'; weekFrom = addDays(startDate, 7); }
+  else if (weekNo === 3) { weekLabel = 'Неделя 3 (7 дней)'; weekFrom = addDays(startDate, 15); }
+  else if (weekNo === 4) { weekLabel = 'Неделя 4 (8 дней)'; weekFrom = addDays(startDate, 22); }
+  else                   { weekLabel = 'Весь период (' + days + ' дней)'; weekFrom = startDate; }
+
+  const weekDaysCount = weekNo ? (weekNo === 2 || weekNo === 4 ? 8 : 7) : (parseInt(days,10) || 30);
+  weekTo = addDays(weekFrom, weekDaysCount - 1);
+
+  // План покупок — все походы (для контекста)
+  const tripsJson = (S.trips || []).map(t => ({
+    date: t.date,
+    kind: t.kind || 'base',
+    status: t.status,
+    items: (S.tripItems || []).filter(it => it.trip_id === t.id).map(it => ({
+      name: (productById(it.product_id) || {}).name || '?',
+      unit: it.unit,
+      target_qty: it.target_qty,
+      plan_price_per_unit: it.plan_price_per_unit,
+      plan_price_total: it.plan_price_total
+    }))
+  }));
+
+  return buildMenuPromptCore({
+    family, budget, city, store, freq, days, constraints, wms,
+    startDate, weekFrom, weekTo, weekLabel, weekDaysCount, tripsJson, weekNo
+  });
+}
+
+function addDays(iso, n) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+
+function buildMenuPromptCore(ctx) {
+  const { family, budget, city, store, freq, days, constraints, wms,
+          startDate, weekFrom, weekTo, weekLabel, weekDaysCount, tripsJson, weekNo } = ctx;
+
+  // Список уникальных имён продуктов — для консистентности
+  const allNames = new Set();
+  for (const t of tripsJson) for (const it of t.items) if (it.name) allNames.add(it.name);
+  const productNamesList = Array.from(allNames).sort().slice(0, 200);
+
+  // Даты походов (строки YYYY-MM-DD)
+  const tripDates = tripsJson.map(t => t.date).sort();
+
+  return `# Задание: составить меню питания на ${weekDaysCount} дней
+
+## Параметры
+- Семья: ${family} человек
+- Бюджет: ${budget} (валюта — по городу/магазину)
+- Город: ${city}
+- Магазин: ${store}
+- Частота походов: каждые ${freq} дня
+- Первый день меню: ${weekFrom}
+- Последний день: ${weekTo}
+- Период: ${weekLabel}
+- Ограничения: ${constraints || 'нет'}
+
+## Даты походов в магазин
+${tripDates.map(d => '- ' + d).join('\n')}
+
+**ВАЖНО про время:** Продукты похода в день X появляются на складе ВЕЧЕРОМ дня X. Это значит:
+- Меню на день X может использовать ТОЛЬКО продукты, купленные ВЧЕРА или РАНЬШЕ (то есть походы с датой < X).
+- НЕЛЬЗЯ ставить блюдо из рыбы на день 1, если рыба будет куплена вечером дня 1 — она появится только к дню 2.
+
+## Что есть дома
+Также учти продукты, которые уже закуплены в прошлом месяце и есть в наличии на складе.
+${wms || ''}
+
+**ПРАВИЛО РАСПРЕДЕЛЕНИЯ:** если блок пуст — считай, что дома ничего нет. Если есть данные — это ОБЩИЙ ресурс на весь период меню. НЕ используй один и тот же продукт больше, чем его есть на складе, суммарно по всем дням. Пример: 2 кг лука на 15 дней — распределяй пропорционально, а не 1 луковица на каждое блюдо.
+
+## Правила составления меню
+
+1. **Используй ТОЛЬКО продукты**, которые:
+   - куплены в походе, дата которого РАНЬШЕ дня меню, ИЛИ
+   - есть на складе (блок WMS выше).
+2. **НЕ выдумывай продукты**, которых нет в покупках и нет на складе. НЕ пиши «попросите у соседей», «сходите в магазин за...».
+3. **Используй ТОЧНЫЕ названия продуктов** — как в списке ниже. Не «масло», а «Масло сливочное 72,5%». Не «крупа», а «Крупа гречневая».
+4. **Разнообразие:** не менее ${Math.max(10, Math.floor(weekDaysCount * 1.5))} уникальных основных блюд за неделю. Каждый день — завтрак ≠ обед ≠ ужин.
+5. **Многодневные блюда** (борщ, суп, рагу на 2–3 дня) оформляй как batch-блюдо: указывай день готовки и дни, когда оно ещё остаётся. Ингредиенты считаются один раз — на весь batch.
+6. **Пропорции:** граммовка (qty) указывается из расчёта на 1 порцию. Общая граммовка = qty × servings × количество дней batch.
+7. **Не бери продукты в `уп`** (специи, перец, лаврушка) в расчёт списания — их пиши с пометкой «по вкусу» и unit=`уп`, qty=0.
+
+## Список названий продуктов (используй эти названия в recipes)
+${productNamesList.map(n => '- ' + n).join('\n')}
+`;
+}
+
+
+// ================= VALIDATE MENU =================
+function validateMenu(data) {
+  const days = data.days || [];
+  if (!Array.isArray(days)) throw new Error('Нет поля days[]');
+  const batches = data.batch_dishes || [];
+  let mealsCount = 0;
+  const warnings = [];
+  const productNames = new Set((S.products || []).map(p => (p.name || '').toLowerCase()));
+  const tripDates = (S.trips || []).map(t => t.date).sort();
+  const wmsMap = {};
+  for (const [pid, have] of Object.entries(S.wms || {})) {
+    const pr = productById(+pid);
+    if (pr) wmsMap[(pr.name || '').toLowerCase()] = +have;
+  }
+
+  // 1) Проверка дней
+  for (const day of days) {
+    if (!day.date) { warnings.push('День без date'); continue; }
+    if (!day.meals || !day.meals.length) warnings.push(day.date + ': нет блюд');
+    mealsCount += (day.meals || []).length;
+    // 2) Блюда: продукт в products?
+    for (const meal of (day.meals || [])) {
+      for (const ing of (meal.ingredients || [])) {
+        const nm = (ing.product_name || '').toLowerCase();
+        if (!nm) continue;
+        if (!productNames.has(nm)) warnings.push(day.date + ' / ' + meal.name + ': продукт «' + ing.product_name + '» нет в БД продуктов');
+      }
+    }
+  }
+
+  // 3) Проверка доступности по датам: продукт куплен позже дня использования
+  // Собираем: для каждого продукта — дата первого похода, где он появляется
+  const productFirstTrip = {};
+  for (const t of (S.trips || [])) {
+    for (const it of (S.tripItems || [])) {
+      if (it.trip_id !== t.id) continue;
+      const pr = productById(it.product_id);
+      if (!pr) continue;
+      const key = (pr.name || '').toLowerCase();
+      if (!productFirstTrip[key] || productFirstTrip[key] > t.date) productFirstTrip[key] = t.date;
+    }
+  }
+  for (const day of days) {
+    for (const meal of (day.meals || [])) {
+      for (const ing of (meal.ingredients || [])) {
+        const nm = (ing.product_name || '').toLowerCase();
+        const firstTrip = productFirstTrip[nm];
+        if (firstTrip && firstTrip >= day.date && !wmsMap[nm]) {
+          warnings.push(day.date + ' / ' + meal.name + ': «' + ing.product_name + '» куплен только ' + firstTrip + ', не доступен в этот день');
+        }
+      }
+    }
+  }
+
+  return {
+    days: days.length,
+    meals: mealsCount,
+    batches: batches.length,
+    first: days[0] ? { date: days[0].date, count: (days[0].meals || []).length } : null,
+    warnings
+  };
+}
+
 // ================= RENDER: SYNC =================
 function renderSync() {
   const root = document.getElementById('tab-sync');
