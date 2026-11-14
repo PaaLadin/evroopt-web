@@ -3519,10 +3519,12 @@ function openMenuDay(dateISO) {
       html += '<div style="font-size:11px;color:var(--muted)">Порций: ' + m.servings + kcal + '</div>';
       if (m.ingredients && m.ingredients.length) {
         html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--blue)">Ингредиенты (' + m.ingredients.length + ')</summary><ul style="margin:6px 0 0 0;padding-left:18px;font-size:11px">';
+        const servings = +m.servings || 1;
         for (const ing of m.ingredients) {
           const isUp = (ing.unit || '').toLowerCase() === 'уп';
           const mark = isUp ? ' <span style="color:var(--muted)">(по вкусу)</span>' : '';
-          html += '<li>' + esc(ing.product_name) + ': ' + ing.qty + ' ' + esc(ing.unit || '') + mark + '</li>';
+          const totalQty = isUp ? ing.qty : +(ing.qty * servings).toFixed(3);
+          html += '<li>' + esc(ing.product_name) + ': ' + totalQty + ' ' + esc(ing.unit || '') + mark + '</li>';
         }
         html += '</ul></details>';
       }
