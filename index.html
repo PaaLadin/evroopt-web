@@ -2729,6 +2729,43 @@ function validateMenu(data) {
     }
   }
 
+  // 4) Суммарный контроль WMS: сколько продукта использовано за весь период vs сколько есть
+  const usedQty = {};
+  for (const day of days) {
+    for (const meal of (day.meals || [])) {
+      for (const ing of (meal.ingredients || [])) {
+        const nm = (ing.product_name || '').toLowerCase();
+        if (!nm) continue;
+        const isUp = (ing.unit || '').toLowerCase() === 'уп';
+        if (isUp) continue; // специи не списываются
+        usedQty[nm] = (usedQty[nm] || 0) + (+ing.qty || 0) * (+meal.servings || 1);
+      }
+    }
+  }
+  for (const batch of batches) {
+    for (const ing of (batch.ingredients || [])) {
+      const nm = (ing.product_name || '').toLowerCase();
+      if (!nm) continue;
+      const isUp = (ing.unit || '').toLowerCase() === 'уп';
+      if (isUp) continue;
+      usedQty[nm] = (usedQty[nm] || 0) + (+ing.qty || 0) * (+batch.total_servings || 1);
+    }
+  }
+  for (const [nm, used] of Object.entries(usedQty)) {
+    const have = wmsMap[nm] || 0;
+    // Учитываем походы: суммарно куплено этого продукта
+    let bought = 0;
+    for (const it of (S.tripItems || [])) {
+      const pr = productById(it.product_id);
+      if (!pr) continue;
+      if ((pr.name || '').toLowerCase() === nm) bought += (+it.target_qty || 0);
+    }
+    const total = have + bought;
+    if (total > 0 && used > total * 1.1) {
+      warnings.push('Суммарно «' + nm + '» использовано ' + used.toFixed(2) + ', доступно ' + total.toFixed(2) + ' (WMS ' + have.toFixed(2) + ' + покупки ' + bought.toFixed(2) + ')');
+    }
+  }
+
   return {
     days: days.length,
     meals: mealsCount,
