@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0f1419">
-<title>Evroopt Budget</title>
+<title>Мой кошык</title>
 <style>
 :root{
   --bg:#0f1419; --card:#171d24; --card2:#1c232b; --line:#2a323c;
@@ -42,7 +42,7 @@ th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertic
 th{background:#141a20;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.3px;font-weight:600}
 tr:hover td{background:#1a2129}
 .row-done td{opacity:.55}
-.row-done a{text-decoration:line-through}
+.row-done a{}
 .pill{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600}
 .pill.draft{background:#333a44;color:var(--muted)}
 .pill.approved{background:rgba(88,166,255,.15);color:var(--blue)}
@@ -119,13 +119,14 @@ a:hover{text-decoration:underline}
 <body>
 <header>
   <div class="hh">
-    <h1>🛒 Evroopt Budget</h1>
+    <h1>🛒 Мой кошык</h1>
     <div class="who" id="who">не авторизован</div>
+    <button id="hdr-logout" class="btn" style="margin-left:10px;padding:6px 12px;font-size:13px;display:none" title="Выйти из аккаунта">🚪 Выйти</button>
   </div>
   <div class="tabs" id="tabs" style="display:none">
     <button data-tab="plan" class="active">📋 План</button>
-    <button data-tab="catalog">🍎 Каталог</button>
-    <button data-tab="fact">💰 Факт</button>
+    <button data-tab="catalog">🏠 Склад</button>
+    <button data-tab="fact">🛒 Покупки</button>
     <button data-tab="audit">📊 Аудит</button>
     <button data-tab="wizard">🔧 Мастер</button>
     <button data-tab="sync">🔄 Синхро</button>
@@ -387,7 +388,16 @@ function renderPlan() {
 async function openTrip(tid) {
   const t = tripById(tid);
   if (!t) return;
-  const items = itemsByTrip(tid);
+  const itemsRaw = itemsByTrip(tid);
+  // Сортировка: купленное (bought_qty>0) сверху по алфавиту, некупленное вниз по алфавиту.
+  const items = itemsRaw.slice().sort((a, b) => {
+    const pa = productById(a.product_id) || { name: '' };
+    const pb = productById(b.product_id) || { name: '' };
+    const ba = (a.bought_qty && +a.bought_qty > 0) ? 0 : 1;
+    const bb = (b.bought_qty && +b.bought_qty > 0) ? 0 : 1;
+    if (ba !== bb) return ba - bb;
+    return (pa.name || '').localeCompare(pb.name || '', 'ru');
+  });
   const isAdmin = S.role === 'admin';
   const isBuyer = S.role === 'buyer';
   const isDraft = t.status === 'draft';
@@ -462,6 +472,7 @@ async function openTrip(tid) {
     html += '<th class="hide-sm" style="width:80px">Факт вес</th>';
   }
   html += '</tr></thead><tbody>';
+  let _dividerShown = false;
 
   for (const it of items) {
     const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
@@ -472,9 +483,14 @@ async function openTrip(tid) {
     const isOverride = (ov !== null && ov !== undefined);
     const planAdj = buy * (+it.plan_price_per_unit || 0);
     const bought = (it.bought_qty > 0);
-    const done = bought ? 'row-done' : '';
+    const done = '';  // п.3: не зачёркиваем купленное
     const hiddenRow = it.hidden ? ' style="opacity:0.35"' : '';
 
+    // п.2: разделитель перед первой некупленной позицией (после купленных)
+    if (!bought && !_dividerShown && items.some(x => x.bought_qty && +x.bought_qty > 0)) {
+      _dividerShown = true;
+      html += '<tr class="divider-row"><td colspan="10" style="border-top:2px solid var(--line);padding:4px 0;text-align:center;color:var(--muted);font-size:10px;letter-spacing:1px">— НЕ КУПЛЕНО —</td></tr>';
+    }
     html += '<tr class="' + done + '" data-iid="' + it.id + '"' + hiddenRow + '>';
     if (canAdminEdit) {
       html += '<td><input type="checkbox" data-act="visible" ' + (it.hidden ? '' : 'checked') + '></td>';
@@ -525,7 +541,7 @@ async function openTrip(tid) {
     const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
     const planAdj = buy * (+it.plan_price_per_unit || 0);
     const bought = (it.bought_qty > 0);
-    const done = bought ? ' done' : '';
+    const done = '';  // п.3: не зачёркиваем купленное
 
     html += '<div class="fact-row' + done + '" data-iid="' + it.id + '">';
     html += '<div class="f-check">';
@@ -1039,11 +1055,57 @@ async function recallReview(tid) {
 async function approveToStock(tid) {
   if (!confirm('Принять на склад?\n\nСоздадутся записи в purchases, обновится WMS, поход закроется.')) return;
   try {
+    // 1) Сохранить текущие правки admin (цены/вес/кол-во) в trip_items.bought_*
+    const items = itemsByTrip(tid);
+    const payload = [];
+    for (const it of items) {
+      const bq = (it.bought_qty === null || it.bought_qty === undefined || it.bought_qty === '') ? null : +it.bought_qty;
+      if (bq === null || bq <= 0) continue;
+      payload.push({
+        trip_item_id: it.id,
+        bought_qty: bq,
+        bought_price: (it.bought_price === null || it.bought_price === undefined || it.bought_price === '') ? '' : String(it.bought_price),
+        bought_weight: it.bought_weight || ''
+      });
+    }
+    if (payload.length > 0) {
+      await api('/rest/v1/rpc/buyer_save_fact', {
+        method: 'POST',
+        body: { p_trip_id: tid, p_items: payload, p_author: S.user?.email }
+      });
+    }
+    // Запомним цены для последующего PATCH products (обход неприменённого SQL 005)
+    const priceSnapshot = payload.map(x => {
+      const it = items.find(i => i.id === x.trip_item_id);
+      return {
+        product_id: it ? it.product_id : null,
+        bought_qty: x.bought_qty,
+        bought_price: x.bought_price === '' ? null : +x.bought_price
+      };
+    }).filter(x => x.product_id && x.bought_price !== null && x.bought_qty > 0);
+
+    // 2) Принять
     const res = await api('/rest/v1/rpc/admin_approve_purchases', {
       method: 'POST',
       body: { p_trip_id: tid, p_author: S.user?.email }
     });
-    toast('✅ Принято: ' + res.purchases_created + ' покупок, WMS обновлён');
+
+    // 3) Обновить products.last_price_per_unit (SQL 005 fallback)
+    let priceUpdated = 0;
+    for (const ps of priceSnapshot) {
+      const ppu = +(ps.bought_price / ps.bought_qty).toFixed(2);
+      try {
+        await api('/rest/v1/products?id=eq.' + ps.product_id, {
+          method: 'PATCH',
+          body: { last_price_per_unit: ppu, last_price_at: new Date().toISOString() }
+        });
+        priceUpdated++;
+      } catch (e) {
+        console.warn('price update failed for product', ps.product_id, e);
+      }
+    }
+
+    toast('✅ Принято: ' + res.purchases_created + ' покупок, WMS обновлён' + (priceUpdated ? ', цены в базе: ' + priceUpdated : ''));
     await loadAll();
     closeModal();
     renderPlan();
@@ -1171,7 +1233,7 @@ function renderFact() {
   const isBuyer = S.role === 'buyer';
   const activeTrips = S.trips.filter(t => t.status === 'approved' || t.status === 'in_progress');
 
-  let html = '<div class="card"><h2>💰 Факт покупок</h2>';
+  let html = '<div class="card"><h2>🛒 Покупки</h2>';
   html += '<p class="muted" style="margin:0 0 10px">Открой поход, отметь купленное, вбей реальные цены. Родитель потом закроет поход.</p>';
 
   if (!activeTrips.length) {
@@ -1296,12 +1358,13 @@ function download(text, filename, mime) {
 let catalogState = {
   collapsed: {},   // { "молочка": true, "бакалея": false }
   search: '',
+  onlyStock: false,   // п.7: показывать только в наличии
 };
 
 function renderCatalog() {
   if (S.role !== 'admin') {
     document.getElementById('tab-catalog').innerHTML =
-      '<div class="card"><h2>🍎 Каталог</h2><div class="empty">Только для админа</div></div>';
+      '<div class="card"><h2>🏠 Склад</h2><div class="empty">Только для админа</div></div>';
     return;
   }
   const root = document.getElementById('tab-catalog');
@@ -1338,17 +1401,18 @@ function renderCatalog() {
   const totalWithStock = Object.values(S.wms).filter(x => x > 0).length;
 
   let html = '<div class="card">';
-  html += '<h2>🍎 Каталог <span class="muted" style="font-weight:400">' + totalProducts + ' продуктов · ' + totalWithStock + ' на складе</span></h2>';
+  html += '<h2>🏠 Склад <span class="muted" style="font-weight:400">' + totalProducts + ' продуктов · ' + totalWithStock + ' на складе</span></h2>';
   html += '<p class="muted" style="margin:0 0 10px">Древовидный список по категориям. Склад редактируется прямо здесь. Клик по продукту — расширенное редактирование.</p>';
   html += '<div class="flex" style="margin-bottom:10px;gap:6px">';
   html += '<input type="text" id="cat-filter" placeholder="Поиск..." value="' + esc(catalogState.search) + '" style="flex:1;min-width:120px">';
+  html += '<label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap"><input type="checkbox" id="cat-only-stock" ' + (catalogState.onlyStock ? 'checked' : '') + '> Только в наличии</label>';
   html += '<button class="btn" id="cat-reload">🔄</button>';
   html += '<button class="btn" id="cat-expand">▾ Развернуть</button>';
   html += '<button class="btn" id="cat-collapse">▸ Свернуть</button>';
   html += '</div>';
 
   if (!totalProducts) {
-    html += '<div class="empty">Каталог пуст</div>';
+    html += '<div class="empty">Склад пуст</div>';
   } else {
     for (const cat of catKeys) {
       const items = groups[cat];
@@ -1356,10 +1420,11 @@ function renderCatalog() {
 
       // Фильтр по поиску — если ни один продукт не подходит, скрываем всю категорию
       const q = catalogState.search.toLowerCase().trim();
-      const filtered = q
+      let filtered = q
         ? items.filter(p => p.name.toLowerCase().includes(q) || (p.brand || '').toLowerCase().includes(q))
         : items;
-      if (q && filtered.length === 0) continue;
+      if (catalogState.onlyStock) filtered = filtered.filter(p => (S.wms[p.id] || 0) > 0);
+      if (filtered.length === 0 && (q || catalogState.onlyStock)) continue;
 
       const catIcon = catIconFor(cat);
       const stockInGroup = filtered.filter(p => (S.wms[p.id] || 0) > 0).length;
@@ -1402,6 +1467,15 @@ function renderCatalog() {
   }
   html += '</div>';
   root.innerHTML = html;
+
+  // Чекбокс "Только в наличии" (п.7)
+  const cbStock = document.getElementById('cat-only-stock');
+  if (cbStock) {
+    cbStock.addEventListener('change', () => {
+      catalogState.onlyStock = cbStock.checked;
+      renderCatalog();
+    });
+  }
 
   // Поиск
   const filter = document.getElementById('cat-filter');
@@ -2545,6 +2619,13 @@ async function enterApp() {
 
   const roleName = S.role === 'admin' ? '👨‍👩‍👧 Родитель' : '🛒 Покупатель';
   document.getElementById('who').innerHTML = '<b>' + esc(S.user?.email || '') + '</b> · ' + roleName;
+
+  // п.8: кнопка "Выйти" в шапке для всех ролей
+  const lo = document.getElementById('hdr-logout');
+  if (lo) {
+    lo.style.display = 'inline-block';
+    lo.onclick = () => { if (confirm('Выйти из аккаунта?')) logout(); };
+  }
 
   try {
     await loadAll();
