@@ -311,15 +311,17 @@ function fmtDate(s) {
 }
 // ================= DATA LOAD =================
 async function loadAll() {
-  const [products, trips, items, wms] = await Promise.all([
+  const [products, trips, items, wms, purchases] = await Promise.all([
     api('/rest/v1/products?select=*&order=name'),
     api('/rest/v1/trips?select=*&order=date.asc'),
     api('/rest/v1/trip_items?select=*'),
     api('/rest/v1/wms?select=*'),
+    api('/rest/v1/purchases?select=*'),
   ]);
   S.products = products || [];
   S.trips = trips || [];
   S.tripItems = items || [];
+  S.purchases = purchases || [];
   S.wms = {};
   for (const w of (wms || [])) S.wms[w.product_id] = +w.have_qty || 0;
 }
@@ -622,6 +624,20 @@ async function openTrip(tid) {
     html += '<button class="btn green modal-save-btn" data-act="force-finish">📦 Завершить напрямую (без review)</button>';
   }
 
+  // Done-поход: purchases без цены/веса — кнопка "Дописать задним числом"
+  if (isDone && isAdmin) {
+    const tripPurchases = (S.purchases || []).filter(x => x.trip_id === tid);
+    const missingPrice = tripPurchases.filter(x => x.price_per_unit === null || x.price_per_unit === undefined).length;
+    const tripItems = itemsByTrip(tid);
+    const missingWeight = tripItems.filter(x => !x.bought_weight).length;
+    if (missingPrice > 0 || missingWeight > 0) {
+      html += '<div style="margin-top:8px;padding:8px;background:rgba(210,153,34,0.1);border:1px solid var(--yellow);border-radius:6px;font-size:12px">';
+      html += '⚠ Данные приёмки до фикса 16B: без цены ' + missingPrice + ' поз., без веса ' + missingWeight + ' поз. Дозаполни.';
+      html += '</div>';
+      html += '<button class="btn" data-act="backfill-prices" data-tid="' + tid + '" style="margin-top:6px;width:100%">💰 Дописать цены и вес задним числом</button>';
+    }
+  }
+
   html += '<button class="btn" style="margin-top:8px;width:100%" onclick="closeModal()">Закрыть</button>';
   html += '</div>';
 
@@ -649,6 +665,9 @@ function bindTripModal(tid) {
       if (act === 'reject-review') return rejectReview(tid);
       if (act === 'force-finish')  return forceFinish(tid);
       if (act === 'refresh-prices') return refreshPrices(tid);
+  if (act === 'backfill-prices') return backfillPrices(tid);
+  if (act === 'backfill-save')   return backfillPricesSave(tid);
+  if (act === 'backfill-cancel') { closeModal(); return openTrip(tid); }
     });
   });
 
@@ -1229,6 +1248,137 @@ async function refreshPricesAll() {
   } catch (e) {
     toast('Ошибка: ' + e.message, 5000);
   }
+}
+
+
+// ================= BACKFILL PRICES + WEIGHT (done-поход) =================
+async function backfillPrices(tid) {
+  const tripPurchases = (S.purchases || []).filter(x => x.trip_id === tid);
+  const tripItems = itemsByTrip(tid);
+  const itemsByProduct = {};
+  for (const it of tripItems) itemsByProduct[it.product_id] = it;
+
+  // Список для заполнения: purchases без цены ИЛИ items без веса
+  const rows = [];
+  for (const pch of tripPurchases) {
+    const it = itemsByProduct[pch.product_id];
+    const needPrice = pch.price_per_unit === null || pch.price_per_unit === undefined;
+    const needWeight = it && !it.bought_weight;
+    if (needPrice || needWeight) {
+      rows.push({ pch, it, needPrice, needWeight });
+    }
+  }
+
+  if (!rows.length) { toast('Нечего дописывать'); return; }
+
+  let html = '<h3 style="margin-top:0">💰 Дописать цены и вес</h3>';
+  html += '<p class="muted" style="margin:0 0 10px;font-size:12px">Введи цену за единицу (как в чеке) и вес (если указан на упаковке). Пустые поля пропускаются.</p>';
+  html += '<div style="overflow-x:auto"><table style="min-width:100%"><thead><tr><th>Товар</th><th class="num">Кол-во</th><th>Ед.</th><th class="num">Цена / ед.</th><th>Вес</th><th class="num">Сумма</th></tr></thead><tbody>';
+
+  for (let i = 0; i < rows.length; i++) {
+    const { pch, it, needPrice, needWeight } = rows[i];
+    const p = productById(pch.product_id) || { name: '?' };
+    html += '<tr>';
+    html += '<td>' + esc(p.name) + '</td>';
+    html += '<td class="num">' + fmt(pch.qty, 2) + '</td>';
+    html += '<td>' + esc(pch.unit || '') + '</td>';
+    html += '<td class="num">';
+    if (needPrice) {
+      html += '<input type="number" step="0.01" data-bf-ppu="' + pch.id + '" data-pch-qty="' + pch.qty + '" placeholder="цена / ед." style="width:100px;padding:4px;text-align:right">';
+    } else {
+      html += fmt(pch.price_per_unit, 2) + ' ✓';
+    }
+    html += '</td>';
+    html += '<td>';
+    if (needWeight && it) {
+      html += '<input type="text" data-bf-weight="' + it.id + '" placeholder="вес" style="width:80px;padding:4px">';
+    } else {
+      html += esc(it && it.bought_weight || '—') + ' ✓';
+    }
+    html += '</td>';
+    html += '<td class="num" data-bf-sum="' + pch.id + '">—</td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  html += '<div class="flex" style="margin-top:14px;gap:6px;flex-wrap:wrap">';
+  html += '<button class="btn green" data-act="backfill-save" data-tid="' + tid + '" style="flex:1">💾 Сохранить</button>';
+  html += '<button class="btn" data-act="backfill-cancel" data-tid="' + tid + '" style="flex:1">Отмена</button>';
+  html += '</div>';
+  modal(html);
+
+  // Live update суммы
+  document.querySelectorAll('[data-bf-ppu]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const pchId = +inp.dataset.bfPpu;
+      const qty = +inp.dataset.pchQty;
+      const sumEl = document.querySelector('[data-bf-sum="' + pchId + '"]');
+      if (sumEl) {
+        const ppu = parseFloat(inp.value);
+        sumEl.textContent = isFinite(ppu) && ppu > 0 ? fmt(ppu * qty, 2) : '—';
+      }
+    });
+  });
+}
+
+async function backfillPricesSave(tid) {
+  const tripPurchases = (S.purchases || []).filter(x => x.trip_id === tid);
+  const tripItems = itemsByTrip(tid);
+  const itemsByProduct = {};
+  for (const it of tripItems) itemsByProduct[it.product_id] = it;
+
+  let priceOk = 0, weightOk = 0, fail = 0;
+
+  // 1) Цены
+  for (const pch of tripPurchases) {
+    const inp = document.querySelector('[data-bf-ppu="' + pch.id + '"]');
+    if (!inp) continue;
+    const ppu = parseFloat(inp.value);
+    if (!isFinite(ppu) || ppu <= 0) continue;
+    const total = +(ppu * +pch.qty).toFixed(2);
+    try {
+      await api('/rest/v1/purchases?id=eq.' + pch.id, {
+        method: 'PATCH',
+        body: { price_per_unit: ppu, total_price: total }
+      });
+      // products.last_price_per_unit — только если ещё нет или новый старше
+      const cur = productById(pch.product_id);
+      const curAt = cur && cur.last_price_at ? new Date(cur.last_price_at).getTime() : 0;
+      const pchAt = pch.bought_at ? new Date(pch.bought_at).getTime() : Date.now();
+      if (!cur || !cur.last_price_per_unit || pchAt >= curAt) {
+        await api('/rest/v1/products?id=eq.' + pch.product_id, {
+          method: 'PATCH',
+          body: { last_price_per_unit: ppu, last_price_at: pch.bought_at || new Date().toISOString() }
+        });
+      }
+      priceOk++;
+    } catch (e) {
+      console.warn('backfill price fail', pch.id, e);
+      fail++;
+    }
+  }
+
+  // 2) Вес — в trip_items.bought_weight
+  for (const it of tripItems) {
+    const inp = document.querySelector('[data-bf-weight="' + it.id + '"]');
+    if (!inp) continue;
+    const w = inp.value.trim();
+    if (!w) continue;
+    try {
+      await api('/rest/v1/trip_items?id=eq.' + it.id, {
+        method: 'PATCH',
+        body: { bought_weight: w }
+      });
+      weightOk++;
+    } catch (e) {
+      console.warn('backfill weight fail', it.id, e);
+      fail++;
+    }
+  }
+
+  toast('✅ Цен: ' + priceOk + ' · вес: ' + weightOk + (fail ? ' · ошибок: ' + fail : ''));
+  await loadAll();
+  closeModal();
+  openTrip(tid);
 }
 
 // ================= RENDER: FACT =================
