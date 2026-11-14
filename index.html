@@ -2088,42 +2088,324 @@ ${wms || '(пусто)'}
 // ================= RENDER: SYNC =================
 function renderSync() {
   const root = document.getElementById('tab-sync');
+  const isAdmin = S.role === 'admin';
+
   root.innerHTML = `
     <div class="card">
       <h2>🔄 Синхронизация</h2>
-      <p class="muted" style="margin:0 0 10px">Данные хранятся в Supabase (центрально). Все устройства видят одно и то же после <b>Обновить</b>.</p>
+      <p class="muted" style="margin:0 0 10px">Данные в Supabase. «Обновить» — <b>скачать</b> актуальное с сервера (Pull). Все изменения в UI <b>уже</b> на сервере.</p>
       <div class="flex">
-        <button class="btn primary" id="sync-reload">🔄 Обновить всё с сервера</button>
+        <button class="btn primary" id="sync-reload">🔄 Обновить с сервера</button>
         <button class="btn red" id="sync-logout">🚪 Выйти</button>
       </div>
     </div>
+
+    ${isAdmin ? `
     <div class="card">
-      <h2>💾 Локальный черновик факта</h2>
-      <p class="muted">Пока ты не закрыл поход, фактические цены/веса хранятся только в твоём браузере (localStorage). Это чтобы можно было работать в магазине без связи.</p>
-      <button class="btn" id="sync-clear-draft">Очистить локальный черновик</button>
+      <h2>📤 Экспорт для ИИ (data lake)</h2>
+      <p class="muted" style="margin:0 0 10px">
+        Полная выгрузка: покупки (append-only), история склада, каталог, актуальные цены.
+        Отдай ИИ на следующий месяц — он учтёт что покупал, по какой цене, что осталось дома.
+      </p>
+      <div class="flex" style="flex-wrap:wrap;gap:6px">
+        <button class="btn green" id="exp-ai-json">📥 Скачать data_lake.json</button>
+        <button class="btn" id="exp-purchases-csv">📥 purchases.csv</button>
+        <button class="btn" id="exp-wms-csv">📥 wms_current.csv</button>
+        <button class="btn" id="exp-wms-history-csv">📥 wms_history.csv</button>
+      </div>
+      <div class="muted" style="margin-top:8px;font-size:11px">data_lake.json — самый полный, для ИИ.</div>
     </div>
+    ` : ''}
+
+    ${isAdmin ? `
+    <div class="card">
+      <h2>📤 Экспорт в JSON-формате приложения (бэкап)</h2>
+      <p class="muted" style="margin:0 0 10px">
+        Формат совместим с импортом в Мастере. Содержит план (trips + trip_items) и каталог (products).
+        Используй для бэкапа перед переустановкой.
+      </p>
+      <button class="btn primary" id="exp-backup">💾 Скачать backup.json</button>
+    </div>
+    ` : ''}
+
+    ${isAdmin ? `
+    <div class="card" style="border-color:var(--red)">
+      <h2 style="color:var(--red)">⚠️ Опасная зона</h2>
+      <p class="muted" style="margin:0 0 10px">
+        Полная очистка БД. Все походы, продукты, покупки, склад — <b>удаляются</b>.
+        Пользователи, схема остаются. Восстановить нельзя.
+      </p>
+      <button class="btn red" id="wipe-all-btn">🗑 Полная очистка</button>
+    </div>
+    ` : ''}
+
     <div class="card">
       <h2>ℹ️ Сведения</h2>
       <div class="muted">
         <div>Сервер: <b>${CFG.url}</b></div>
         <div>Пользователь: <b>${esc(S.user?.email || '')}</b></div>
         <div>Роль: <b>${esc(S.role || '')}</b></div>
-        <div>Версия: 1.0</div>
+        <div>Версия: 1.2 · data lake + актуальные цены</div>
       </div>
     </div>
   `;
+
+  // Reload
   document.getElementById('sync-reload').addEventListener('click', async () => {
     await loadAll(); renderPlan(); toast('Обновлено');
   });
   document.getElementById('sync-logout').addEventListener('click', () => {
     if (confirm('Выйти?')) logout();
   });
-  document.getElementById('sync-clear-draft').addEventListener('click', () => {
-    if (!confirm('Очистить локальный черновик?')) return;
-    localStorage.removeItem(LS_CACHE);
-    for (const it of S.tripItems) { delete it._bought; delete it._fact_price; delete it._fact_weight; }
-    toast('Черновик очищен');
-  });
+
+  // Экспорт data lake
+  const expAi = document.getElementById('exp-ai-json');
+  if (expAi) expAi.addEventListener('click', exportDataLake);
+
+  const expPur = document.getElementById('exp-purchases-csv');
+  if (expPur) expPur.addEventListener('click', exportPurchasesCSV);
+
+  const expWms = document.getElementById('exp-wms-csv');
+  if (expWms) expWms.addEventListener('click', exportWmsCSV);
+
+  const expWh = document.getElementById('exp-wms-history-csv');
+  if (expWh) expWh.addEventListener('click', exportWmsHistoryCSV);
+
+  // Бэкап
+  const expBak = document.getElementById('exp-backup');
+  if (expBak) expBak.addEventListener('click', exportBackup);
+
+  // Wipe
+  const wipeBtn = document.getElementById('wipe-all-btn');
+  if (wipeBtn) wipeBtn.addEventListener('click', wipeAllModal);
+}
+
+// ============================================================
+// EXPORT: data lake JSON для ИИ
+// ============================================================
+async function exportDataLake() {
+  toast('Собираю данные...', 2000);
+  try {
+    const [purchases, wmsHist, products, wmsCur] = await Promise.all([
+      api('/rest/v1/purchases?select=*&order=bought_at.desc&limit=5000'),
+      api('/rest/v1/wms_history?select=*&order=created_at.desc&limit=2000'),
+      api('/rest/v1/products?select=*&order=name'),
+      api('/rest/v1/wms?select=*'),
+    ]);
+
+    const prodById = {};
+    for (const p of products) prodById[p.id] = p;
+    const wmsMap = {};
+    for (const w of wmsCur) wmsMap[w.product_id] = +w.have_qty || 0;
+
+    // Собираем агрегаты
+    const byProduct = {};
+    for (const p of purchases) {
+      if (!byProduct[p.product_id]) {
+        byProduct[p.product_id] = { total_qty: 0, total_sum: 0, count: 0, last_price_per_unit: null, last_bought_at: null };
+      }
+      const agg = byProduct[p.product_id];
+      agg.total_qty += +p.qty || 0;
+      agg.total_sum += +p.total_price || 0;
+      agg.count++;
+      if (!agg.last_bought_at || p.bought_at > agg.last_bought_at) {
+        agg.last_bought_at = p.bought_at;
+        agg.last_price_per_unit = p.price_per_unit;
+      }
+    }
+
+    const dataLake = {
+      _meta: {
+        generated_at: new Date().toISOString(),
+        user: S.user?.email,
+        version: '1.0',
+        description: 'Data lake: вся история покупок и склада. Отдай ИИ — он учтёт факты.',
+      },
+      _instructions_for_ai: {
+        note: 'Используй purchases_history и wms_current чтобы составить новый план. Учитывай: 1) актуальные цены из products.last_price_per_unit, 2) остатки в wms_current, 3) частоту покупок в by_product.',
+        format_hint: 'Сгенерируй JSON в формате: {"trips":[{"date":"YYYY-MM-DD","kind":"base|fresh","items":[{"name":"...","brand":"...","unit":"кг|л|шт|уп","target_qty":N,"plan_price_per_unit":N,"plan_price_total":N,"search_url":"...","category":"..."}]}]}',
+      },
+      current_plan: {
+        trips_count: S.trips.length,
+        trip_items_count: S.tripItems.length,
+        trips: S.trips.map(t => ({
+          date: t.date, kind: t.kind, status: t.status,
+          items: itemsByTrip(t.id).map(it => {
+            const prod = prodById[it.product_id] || {};
+            return {
+              product_id: it.product_id, product_name: prod.name, unit: it.unit,
+              target_qty: +it.target_qty || 0,
+              override_buy_qty: it.override_buy_qty,
+              plan_price_per_unit: +it.plan_price_per_unit || 0,
+              plan_price_total: +it.plan_price_total || 0,
+              last_actual_price: prod.last_price_per_unit,
+              have_at_home: wmsMap[it.product_id] || 0,
+            };
+          })
+        }))
+      },
+      products_catalog: products.map(p => ({
+        id: p.id, name: p.name, brand: p.brand, unit: p.unit,
+        category: p.category, search_url: p.search_url,
+        last_price_per_unit: p.last_price_per_unit,
+        last_price_at: p.last_price_at,
+      })),
+      wms_current: products.filter(p => (wmsMap[p.id] || 0) > 0).map(p => ({
+        product_id: p.id, name: p.name, unit: p.unit, have_qty: wmsMap[p.id],
+      })),
+      purchases_history: purchases.slice(0, 2000).map(p => {
+        const prod = prodById[p.product_id] || {};
+        return {
+          bought_at: p.bought_at, product_name: prod.name, unit: p.unit,
+          qty: +p.qty, price_per_unit: +p.price_per_unit || 0, total_price: +p.total_price,
+          was_planned: p.was_planned, trip_id: p.trip_id, bought_by: p.bought_by,
+        };
+      }),
+      by_product: Object.entries(byProduct).map(([pid, agg]) => {
+        const prod = prodById[+pid] || {};
+        return {
+          product_id: +pid, name: prod.name, unit: prod.unit, category: prod.category,
+          times_bought: agg.count, total_qty: +agg.total_qty.toFixed(2), total_sum: +agg.total_sum.toFixed(2),
+          avg_price_per_unit: agg.total_qty > 0 ? +(agg.total_sum / agg.total_qty).toFixed(2) : null,
+          last_price_per_unit: agg.last_price_per_unit ? +agg.last_price_per_unit.toFixed(2) : null,
+          last_bought_at: agg.last_bought_at,
+        };
+      }).sort((a, b) => b.total_sum - a.total_sum),
+      wms_history_recent: wmsHist.slice(0, 500).map(h => {
+        const prod = prodById[h.product_id] || {};
+        return {
+          created_at: h.created_at, product_name: prod.name,
+          delta: +h.delta_qty, qty_after: +h.qty_after, reason: h.reason,
+          source: h.source, author: h.author,
+        };
+      }),
+    };
+
+    const fname = 'data_lake_' + new Date().toISOString().slice(0, 10) + '.json';
+    download(JSON.stringify(dataLake, null, 2), fname, 'application/json');
+    toast('📥 ' + fname + ' (' + Math.round(JSON.stringify(dataLake).length / 1024) + ' KB)');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 5000);
+  }
+}
+
+// ============================================================
+// EXPORT: покупки в CSV
+// ============================================================
+async function exportPurchasesCSV() {
+  try {
+    const [purchases, products] = await Promise.all([
+      api('/rest/v1/purchases?select=*&order=bought_at.desc&limit=10000'),
+      api('/rest/v1/products?select=id,name'),
+    ]);
+    const nameById = {};
+    for (const p of products) nameById[p.id] = p.name;
+    let csv = '\ufeffdate,product,qty,unit,price_per_unit,total_price,was_planned,trip_id,bought_by\n';
+    for (const p of purchases) {
+      csv += [
+        p.bought_at || '',
+        '"' + (nameById[p.product_id] || '?').replace(/"/g, '""') + '"',
+        p.qty, p.unit || '',
+        p.price_per_unit || '', p.total_price,
+        p.was_planned, p.trip_id || '', p.bought_by || '',
+      ].join(',') + '\n';
+    }
+    download(csv, 'purchases_' + new Date().toISOString().slice(0, 10) + '.csv', 'text/csv;charset=utf-8');
+    toast('📥 purchases.csv (' + purchases.length + ' строк)');
+  } catch (e) { toast('Ошибка: ' + e.message, 5000); }
+}
+
+// ============================================================
+// EXPORT: склад текущий
+// ============================================================
+async function exportWmsCSV() {
+  try {
+    const [wms, products] = await Promise.all([
+      api('/rest/v1/wms?select=*'),
+      api('/rest/v1/products?select=id,name,unit,category'),
+    ]);
+    const prodById = {};
+    for (const p of products) prodById[p.id] = p;
+    let csv = '\ufeffproduct,unit,category,have_qty,updated_at,updated_by\n';
+    for (const w of wms) {
+      const p = prodById[w.product_id] || {};
+      csv += [
+        '"' + (p.name || '?').replace(/"/g, '""') + '"',
+        p.unit || '', p.category || '',
+        w.have_qty, w.updated_at || '', w.updated_by || '',
+      ].join(',') + '\n';
+    }
+    download(csv, 'wms_current_' + new Date().toISOString().slice(0, 10) + '.csv', 'text/csv;charset=utf-8');
+    toast('📥 wms_current.csv (' + wms.length + ' строк)');
+  } catch (e) { toast('Ошибка: ' + e.message, 5000); }
+}
+
+// ============================================================
+// EXPORT: история склада
+// ============================================================
+async function exportWmsHistoryCSV() {
+  try {
+    const [wmsHist, products] = await Promise.all([
+      api('/rest/v1/wms_history?select=*&order=created_at.desc&limit=10000'),
+      api('/rest/v1/products?select=id,name,unit'),
+    ]);
+    const prodById = {};
+    for (const p of products) prodById[p.id] = p;
+    let csv = '\ufeffdate,product,unit,delta,qty_after,reason,source,author\n';
+    for (const h of wmsHist) {
+      const p = prodById[h.product_id] || {};
+      csv += [
+        h.created_at || '',
+        '"' + (p.name || '?').replace(/"/g, '""') + '"',
+        p.unit || '',
+        h.delta_qty, h.qty_after, h.reason || '', h.source || '', h.author || '',
+      ].join(',') + '\n';
+    }
+    download(csv, 'wms_history_' + new Date().toISOString().slice(0, 10) + '.csv', 'text/csv;charset=utf-8');
+    toast('📥 wms_history.csv (' + wmsHist.length + ' строк)');
+  } catch (e) { toast('Ошибка: ' + e.message, 5000); }
+}
+
+// ============================================================
+// EXPORT: бэкап (совместим с импортом Мастера)
+// ============================================================
+function exportBackup() {
+  const backup = {
+    _meta: {
+      generated_at: new Date().toISOString(),
+      format: 'evroopt_backup_v1',
+      user: S.user?.email,
+      description: 'Полный бэкап: план + каталог. Импортируется через Мастер.',
+    },
+    period: {
+      from: S.trips.length ? S.trips.map(t => t.date).sort()[0] : new Date().toISOString().slice(0, 10),
+      to: S.trips.length ? S.trips.map(t => t.date).sort().slice(-1)[0] : new Date().toISOString().slice(0, 10),
+    },
+    budget_byn: null,
+    family_size: null,
+    store: null,
+    city: null,
+    trips: S.trips.map(t => {
+      const items = itemsByTrip(t.id);
+      const prodById = {};
+      for (const p of S.products) prodById[p.id] = p;
+      return {
+        date: t.date, kind: t.kind, note: t.note,
+        items: items.map(it => {
+          const prod = prodById[it.product_id] || {};
+          return {
+            name: prod.name || '?', brand: prod.brand, unit: it.unit,
+            target_qty: +it.target_qty, plan_price_per_unit: +it.plan_price_per_unit || 0,
+            plan_price_total: +it.plan_price_total || 0,
+            search_url: prod.search_url, category: prod.category,
+          };
+        }),
+      };
+    }),
+  };
+  const fname = 'backup_' + new Date().toISOString().slice(0, 10) + '.json';
+  download(JSON.stringify(backup, null, 2), fname, 'application/json');
+  toast('💾 ' + fname);
 }
 
 // ================= NAVIGATION =================
@@ -2216,6 +2498,90 @@ async function enterApp() {
 // Глобально
 window.closeModal = closeModal;
 boot();
+
+// ============================================================
+// WIPE UI — полная очистка всех данных
+// ============================================================
+
+function wipeAllModal() {
+  if (S.role !== 'admin') { toast('Только для админа'); return; }
+
+  const stats = {
+    trips: S.trips.length,
+    trip_items: S.tripItems.length,
+    products: S.products.length,
+    wms: Object.values(S.wms).filter(x => x > 0).length,
+  };
+
+  modal(`
+    <h3 style="margin-top:0;color:var(--red)">🗑 ПОЛНАЯ ОЧИСТКА ВСЕХ ДАННЫХ</h3>
+    <p style="margin:0 0 12px;color:var(--red);font-weight:600">Это НЕОБРАТИМО. Будут удалены:</p>
+    <ul style="margin:0 0 12px 20px;padding:0;font-size:13px">
+      <li><b>${stats.trips}</b> походов + <b>${stats.trip_items}</b> позиций</li>
+      <li><b>${stats.products}</b> продуктов из справочника</li>
+      <li><b>${stats.wms}</b> записей склада</li>
+      <li><b>ВСЕ</b> покупки (история навсегда)</li>
+      <li><b>ВСЯ</b> история склада</li>
+      <li><b>ВСЕ</b> записи аудита</li>
+    </ul>
+    <p class="muted" style="margin:0 0 12px">Пользователи, схема БД, RLS — остаются.</p>
+
+    <label>Шаг 1. Введите слово <b style="color:var(--red)">УДАЛИТЬ</b> заглавными</label>
+    <input type="text" id="wipe-word" placeholder="УДАЛИТЬ" autocomplete="off">
+
+    <label style="margin-top:10px">Шаг 2. Введите код <b style="color:var(--red)">1234</b></label>
+    <input type="text" id="wipe-code" placeholder="1234" autocomplete="off" maxlength="4">
+
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn red" id="wipe-confirm" disabled>🗑 УДАЛИТЬ ВСЁ</button>
+    </div>
+  `);
+
+  const box = document.getElementById('modal-box');
+  const wordInput = box.querySelector('#wipe-word');
+  const codeInput = box.querySelector('#wipe-code');
+  const confirmBtn = box.querySelector('#wipe-confirm');
+
+  function checkReady() {
+    const ok = wordInput.value === 'УДАЛИТЬ' && codeInput.value === '1234';
+    confirmBtn.disabled = !ok;
+    confirmBtn.style.opacity = ok ? '1' : '0.5';
+  }
+  wordInput.addEventListener('input', checkReady);
+  codeInput.addEventListener('input', checkReady);
+
+  confirmBtn.addEventListener('click', async () => {
+    if (confirmBtn.disabled) return;
+    if (!confirm('Последнее подтверждение. Удалить ВСЁ? Откатить нельзя.')) return;
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Удаление...';
+
+    try {
+      const res = await api('/rest/v1/rpc/wipe_all_data', {
+        method: 'POST',
+        body: { p_author: S.user?.email, p_confirm: 'WIPE_ALL' }
+      });
+      const d = res.deleted;
+      toast('✅ Удалено: ' + d.trips + ' походов, ' + d.products + ' продуктов, ' + d.purchases + ' покупок', 5000);
+
+      // Сброс локального состояния
+      S.products = [];
+      S.trips = [];
+      S.tripItems = [];
+      S.wms = {};
+      localStorage.removeItem(LS_CACHE);
+
+      closeModal();
+      renderPlan();
+    } catch (e) {
+      toast('Ошибка: ' + e.message, 5000);
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '🗑 УДАЛИТЬ ВСЁ';
+    }
+  });
+}
 </script>
 </body>
 </html>
