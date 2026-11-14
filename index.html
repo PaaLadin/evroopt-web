@@ -382,6 +382,20 @@ function renderPlan() {
   html += '</div>';
   root.innerHTML = html;
 
+  // Бейдж ожидания на вкладке План (admin)
+  const awaitingCount = groups.awaiting_review ? groups.awaiting_review.length : 0;
+  const planTabBtn = document.querySelector('button[data-tab="plan"]');
+  if (planTabBtn) {
+    const baseText = '📋 План';
+    if (isAdmin && awaitingCount > 0) {
+      planTabBtn.innerHTML = baseText + ' <span style="background:var(--red);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">' + awaitingCount + '</span>';
+      planTabBtn.title = awaitingCount + ' поход(ов) ждут проверки';
+    } else {
+      planTabBtn.textContent = baseText;
+      planTabBtn.title = '';
+    }
+  }
+
   root.querySelectorAll('.trip-card').forEach(el => {
     el.addEventListener('click', () => openTrip(+el.dataset.trip));
   });
