@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Мой кошык · Админка</title>
+<style>
+:root{--bg:#0b0f14;--card:#111820;--card2:#161f29;--line:#243140;--text:#dbe7f3;--muted:#7a8899;--blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;background:var(--bg);color:var(--text);font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
+h1{margin:0;font-size:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+input,select,button{font:inherit;background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:6px 9px}
+button{cursor:pointer}
+button:hover{border-color:var(--blue)}
+.btn.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.btn.green{background:var(--green);color:#fff;border-color:var(--green)}
+.btn.red{background:var(--red);color:#fff;border-color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase}
+td input,td select{width:100%;padding:4px 6px;font-size:12px}
+.row-del td{opacity:.4;text-decoration:line-through}
+.hidden{display:none}
+.flex{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
+#login-card{max-width:380px;margin:80px auto}
+#login-card input{width:100%}
+.badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:var(--blue);color:#fff;margin-left:4px}
+.badge.off{background:var(--muted)}
+@media(max-width:700px){table{font-size:12px}th,td{padding:4px}}
+</style>
+</head>
+<body>
+
+<div id="login-card" class="card">
+  <h1>🔐 Админка «Мой кошык»</h1>
+  <label>Email</label>
+  <input type="email" id="li-email" value="paaladin@paaladin.ru">
+  <label>Пароль</label>
+  <input type="password" id="li-pass" value="65546554">
+  <div style="margin-top:12px"><button class="btn primary" id="li-btn" style="width:100%">Войти</button></div>
+  <div id="li-msg" style="color:var(--red);margin-top:8px;font-size:12px"></div>
+</div>
+
+<div id="app" class="hidden">
+<header>
+  <h1>🔧 Продукты <span class="badge" id="who"></span></h1>
+  <button class="btn" id="logout-btn">🚪 Выйти</button>
+</header>
+
+<div class="card">
+  <div class="flex" style="margin-bottom:10px">
+    <input type="text" id="search" placeholder="Поиск..." style="flex:1;min-width:150px">
+    <select id="filter">
+      <option value="all">Все</option>
+      <option value="shared">Только общие</option>
+      <option value="mine">Только мои</option>
+      <option value="deleted">Только удалённые</option>
+    </select>
+    <button class="btn green" id="add-btn">+ Продукт</button>
+    <button class="btn" id="reload-btn">🔄</button>
+  </div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th style="width:40px">ID</th>
+        <th>Название</th>
+        <th style="width:130px">Категория</th>
+        <th style="width:60px">Ед</th>
+        <th style="width:80px">Ккал/100</th>
+        <th style="width:60px">Общий</th>
+        <th style="width:80px"></th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin:0 0 8px;font-size:16px">🧹 Очистка истории</h2>
+  <p style="color:var(--muted);font-size:12px;margin:0 0 8px">Удаляет purchases, wms_history, meal_plans старше указанного срока. Действие необратимо.</p>
+  <div class="flex">
+    <select id="purge-age">
+      <option value="180">старше 6 месяцев</option>
+      <option value="365">старше 1 года</option>
+      <option value="90">старше 3 месяцев</option>
+    </select>
+    <button class="btn red" id="purge-btn">Очистить</button>
+    <span id="purge-msg" style="color:var(--muted);font-size:12px"></span>
+  </div>
+</div>
+</div>
+
+<script>
+
+const CFG = {
+  url: 'https://mowkvfgxrvfcafuuiaho.supabase.co',
+  key: 'sb_publishable_n9b-TOXOCU_ojtb0a_kbyQ_g3odyXIX'
+};
+const LS = 'koshik_admin_v1';
+const S = { token: null, user: null, products: [], filter: 'all', search: '' };
+
+async function api(path, opts = {}) {
+  const headers = { 'apikey': CFG.key, 'Content-Type': 'application/json' };
+  if (S.token) headers['Authorization'] = 'Bearer ' + S.token;
+  if (opts.prefer) headers['Prefer'] = opts.prefer;
+  const res = await fetch(CFG.url + path, {
+    method: opts.method || 'GET',
+    headers,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(res.status + ' ' + err.slice(0, 300));
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+async function login(email, password) {
+  const res = await fetch(CFG.url + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { 'apikey': CFG.key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  if (!res.ok) throw new Error('Неверный email или пароль');
+  const d = await res.json();
+  const role = (d.user.app_metadata || {}).role;
+  if (role !== 'superadmin') throw new Error('Доступ только для superadmin (role=' + role + ')');
+  S.token = d.access_token;
+  S.user = d.user;
+  localStorage.setItem(LS, JSON.stringify({
+    token: d.access_token, refresh: d.refresh_token,
+    email: d.user.email, role: role,
+    exp: Date.now() + (d.expires_in * 1000) - 60000
+  }));
+}
+
+function logout() {
+  S.token = null; S.user = null; S.products = [];
+  localStorage.removeItem(LS);
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-card').classList.remove('hidden');
+}
+
+async function refreshIfNeeded() {
+  const raw = localStorage.getItem(LS);
+  if (!raw) return false;
+  const s = JSON.parse(raw);
+  if (!s.token) return false;
+  if (s.exp && s.exp > Date.now()) {
+    S.token = s.token; S.user = { email: s.email, app_metadata: { role: s.role } };
+    return true;
+  }
+  try {
+    const res = await fetch(CFG.url + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'apikey': CFG.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: s.refresh })
+    });
+    if (!res.ok) throw new Error('refresh failed');
+    const d = await res.json();
+    S.token = d.access_token; S.user = d.user;
+    localStorage.setItem(LS, JSON.stringify({
+      token: d.access_token, refresh: d.refresh_token,
+      email: d.user.email, role: (d.user.app_metadata||{}).role,
+      exp: Date.now() + (d.expires_in * 1000) - 60000
+    }));
+    return true;
+  } catch (e) { localStorage.removeItem(LS); return false; }
+}
+
+async function loadProducts() {
+  S.products = await api('/rest/v1/products?select=id,name,category,unit,kcal_per_100g,is_shared,is_deleted,family_id&order=name');
+  render();
+}
+
+function esc(s) {
+  return (s || '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function render() {
+  const tb = document.getElementById('tbody');
+  let list = S.products.slice();
+  // Фильтр
+  if (S.filter === 'shared') list = list.filter(p => p.is_shared && !p.is_deleted);
+  else if (S.filter === 'mine') list = list.filter(p => !p.is_shared && !p.is_deleted);
+  else if (S.filter === 'deleted') list = list.filter(p => p.is_deleted);
+  else list = list.filter(p => !p.is_deleted);
+  // Поиск
+  const q = (S.search || '').toLowerCase().trim();
+  if (q) list = list.filter(p => (p.name || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q));
+  // Счётчики
+  const total = S.products.filter(p => !p.is_deleted).length;
+  const shared = S.products.filter(p => p.is_shared && !p.is_deleted).length;
+  const mine = S.products.filter(p => !p.is_shared && !p.is_deleted).length;
+  const del = S.products.filter(p => p.is_deleted).length;
+  document.getElementById('who').textContent = total + ' / ' + shared + ' общих / ' + mine + ' моих / ' + del + ' удал.';
+
+  if (!list.length) {
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Ничего не найдено</td></tr>';
+    return;
+  }
+  let html = '';
+  const cats = ['бакалея','молочка','мясо','овощи','фрукты','хлеб','специи','прочее'];
+  for (const p of list) {
+    const rowCls = p.is_deleted ? ' class="row-del"' : '';
+    html += '<tr data-pid="' + p.id + '"' + rowCls + '>';
+    html += '<td>' + p.id + '</td>';
+    html += '<td><input type="text" data-f="name" value="' + esc(p.name) + '" ' + (p.is_deleted ? 'disabled' : '') + '></td>';
+    html += '<td><select data-f="category" ' + (p.is_deleted ? 'disabled' : '') + '>';
+    for (const c of cats) html += '<option value="' + c + '"' + (p.category === c ? ' selected' : '') + '>' + c + '</option>';
+    html += '</select></td>';
+    html += '<td><select data-f="unit" ' + (p.is_deleted ? 'disabled' : '') + '>';
+    for (const u of ['кг','л','шт','уп']) html += '<option value="' + u + '"' + (p.unit === u ? ' selected' : '') + '>' + u + '</option>';
+    html += '</select></td>';
+    html += '<td><input type="number" step="0.01" data-f="kcal_per_100g" value="' + (p.kcal_per_100g ?? '') + '" ' + (p.is_deleted ? 'disabled' : '') + '></td>';
+    html += '<td style="text-align:center"><input type="checkbox" data-f="is_shared" ' + (p.is_shared ? 'checked' : '') + ' ' + (p.is_deleted ? 'disabled' : '') + '></td>';
+    html += '<td>';
+    if (p.is_deleted) {
+      html += '<button class="btn" data-restore="' + p.id + '" title="Восстановить">↩</button>';
+    } else {
+      html += '<button class="btn red" data-del="' + p.id + '" title="Удалить">🗑</button>';
+    }
+    html += '</td></tr>';
+  }
+  tb.innerHTML = html;
+}
+
+async function saveProduct(pid, field, value) {
+  try {
+    const body = {}; body[field] = value;
+    await api('/rest/v1/products?id=eq.' + pid, { method: 'PATCH', prefer: 'return=minimal', body });
+    const p = S.products.find(x => x.id === pid);
+    if (p) p[field] = value;
+    render();
+  } catch (e) {
+    alert('Ошибка: ' + e.message);
+    await loadProducts();
+  }
+}
+
+async function deleteProduct(pid) {
+  const p = S.products.find(x => x.id === pid);
+  if (!p) return;
+  if (!confirm('Удалить "' + p.name + '"?\n\nЕсли используется в походах/покупках — будет скрыт (soft). Иначе — удалён навсегда.')) return;
+  try {
+    // Проверка использования
+    const ti = await api('/rest/v1/trip_items?select=id&product_id=eq.' + pid + '&limit=1');
+    const pu = await api('/rest/v1/purchases?select=id&product_id=eq.' + pid + '&limit=1');
+    if (ti.length || pu.length) {
+      await api('/rest/v1/products?id=eq.' + pid, { method: 'PATCH', prefer: 'return=minimal', body: { is_deleted: true } });
+      alert('Продукт используется в истории — скрыт (is_deleted).');
+    } else {
+      await api('/rest/v1/products?id=eq.' + pid, { method: 'DELETE', prefer: 'return=minimal' });
+    }
+    await loadProducts();
+  } catch (e) {
+    alert('Ошибка удаления: ' + e.message);
+  }
+}
+
+async function addProduct() {
+  const name = prompt('Название продукта:');
+  if (!name) return;
+  const cat = prompt('Категория (бакалея/молочка/мясо/овощи/фрукты/хлеб/специи/прочее):', 'бакалея');
+  if (!cat) return;
+  const unit = prompt('Единица (кг/л/шт/уп):', 'кг');
+  if (!unit) return;
+  const kcal = prompt('Ккал на 100 г (пусто = не считать):', '');
+  try {
+    await api('/rest/v1/products', { method: 'POST', prefer: 'return=minimal',
+      body: { name, category: cat, unit, kcal_per_100g: kcal ? +kcal : null, is_shared: false, family_id: 1 } });
+    await loadProducts();
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function purgeHistory() {
+  const days = +document.getElementById('purge-age').value;
+  if (!confirm('Удалить историю старше ' + days + ' дней? Это необратимо.')) return;
+  const msg = document.getElementById('purge-msg');
+  msg.textContent = 'Выполняю...';
+  try {
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+    const r1 = await api('/rest/v1/purchases?created_at=lt.' + cutoff, { method: 'DELETE', prefer: 'return=count' });
+    const r2 = await api('/rest/v1/wms_history?created_at=lt.' + cutoff, { method: 'DELETE', prefer: 'return=count' });
+    msg.textContent = 'Готово. purchases + wms_history очищены.';
+  } catch (e) { msg.textContent = 'Ошибка: ' + e.message; }
+}
+
+// ============ INIT ============
+document.getElementById('li-btn').addEventListener('click', async () => {
+  const email = document.getElementById('li-email').value.trim();
+  const pass = document.getElementById('li-pass').value;
+  const msg = document.getElementById('li-msg');
+  msg.textContent = 'Вход...';
+  try {
+    await login(email, pass);
+    msg.textContent = '';
+    await start();
+  } catch (e) { msg.textContent = e.message; }
+});
+
+document.getElementById('logout-btn').addEventListener('click', logout);
+
+document.getElementById('reload-btn').addEventListener('click', () => loadProducts());
+
+document.getElementById('search').addEventListener('input', (e) => { S.search = e.target.value; render(); });
+
+document.getElementById('filter').addEventListener('change', (e) => { S.filter = e.target.value; render(); });
+
+document.getElementById('add-btn').addEventListener('click', addProduct);
+
+document.getElementById('purge-btn').addEventListener('click', purgeHistory);
+
+document.getElementById('tbody').addEventListener('change', (e) => {
+  const tr = e.target.closest('tr');
+  if (!tr) return;
+  const pid = +tr.dataset.pid;
+  const field = e.target.dataset.f;
+  if (!field) return;
+  let value = e.target.value;
+  if (field === 'is_shared') value = e.target.checked;
+  if (field === 'kcal_per_100g') value = value === '' ? null : +value;
+  saveProduct(pid, field, value);
+});
+
+document.getElementById('tbody').addEventListener('click', (e) => {
+  const delBtn = e.target.closest('[data-del]');
+  if (delBtn) { deleteProduct(+delBtn.dataset.del); return; }
+  const restBtn = e.target.closest('[data-restore]');
+  if (restBtn) {
+    api('/rest/v1/products?id=eq.' + restBtn.dataset.restore, { method: 'PATCH', prefer: 'return=minimal', body: { is_deleted: false } }).then(loadProducts);
+  }
+});
+
+async function start() {
+  document.getElementById('login-card').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  await loadProducts();
+}
+
+// Boot
+(async () => {
+  if (await refreshIfNeeded()) {
+    try { await start(); } catch (e) { console.warn(e); logout(); }
+  }
+})();
+</script>
+</body>
+</html>
