@@ -200,6 +200,26 @@ async function api(path, opts = {}) {
     headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
+  if (res.status === 401 && S.token) {
+    // JWT истёк: пробуем refresh и один retry
+    try {
+      const ok = await refreshIfNeeded();
+      if (ok) {
+        headers['Authorization'] = 'Bearer ' + S.token;
+        const res2 = await fetch(CFG.url + path, {
+          method: opts.method || 'GET',
+          headers,
+          body: opts.body ? JSON.stringify(opts.body) : undefined,
+        });
+        if (res2.ok) return res2.status === 204 ? null : res2.json();
+        const err2 = await res2.text();
+        throw new Error(res2.status + ' ' + err2.slice(0, 300));
+      }
+    } catch (e) { /* fallthrough to error */ }
+    // refresh не помог — logout
+    logout();
+    throw new Error('401 Unauthorized (session expired)');
+  }
   if (!res.ok) {
     const err = await res.text();
     throw new Error(res.status + ' ' + err.slice(0, 300));
