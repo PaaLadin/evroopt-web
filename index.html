@@ -565,6 +565,7 @@ async function openTrip(tid) {
   let _dividerShown = false;
 
   for (const it of items) {
+    if (it.hidden && !canAdminEdit) continue;
     const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
     const have = S.wms[it.product_id] || 0;
     const ov = it.override_buy_qty;
@@ -625,6 +626,7 @@ async function openTrip(tid) {
   // ============ MOBILE ============
   html += '<div class="fact-cards-mobile">';
   for (const it of items) {
+    if (it.hidden && !canAdminEdit) continue;
     const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
     const have = S.wms[it.product_id] || 0;
     const ov = it.override_buy_qty;
@@ -635,6 +637,9 @@ async function openTrip(tid) {
 
     html += '<div class="fact-row' + done + '" data-iid="' + it.id + '">';
     html += '<div class="f-check">';
+    if (canAdminEdit) {
+      html += '<input type="checkbox" data-act="visible" ' + (it.hidden ? '' : 'checked') + ' style="width:22px;height:22px;margin-right:6px" title="Включить в план">';
+    }
     if (canBuy) {
       html += '<input type="checkbox" data-act="bought-toggle" ' + (bought ? 'checked' : '') + ' style="width:22px;height:22px">';
     } else if (bought) {
@@ -647,6 +652,7 @@ async function openTrip(tid) {
       html += '<div class="f-inputs">';
       html += '<div><label>Кол-во (' + esc(it.unit || '') + ')</label><input type="number" step="0.01" data-act="bought-qty" value="' + (it.bought_qty || '') + '" placeholder="' + fmt(buy, 2) + '"></div>';
       html += '<div><label>Сумма (BYN)</label><input type="number" step="0.01" data-act="bought-price" value="' + (it.bought_price || '') + '" placeholder="' + fmt(planAdj, 2) + '"></div>';
+      html += '<div><label>Вес</label><input type="text" data-act="bought-weight" value="' + esc(it.bought_weight || '') + '" placeholder="' + esc(it.unit || '') + '"></div>';
       html += '</div>';
     } else if (isReview || isDone) {
       html += '<div class="f-meta" style="color:var(--green)">Факт: ' + fmt(+it.bought_qty, 2) + ' ' + esc(it.unit || '') + ' · ' + fmt(+it.bought_price, 2) + ' BYN</div>';
@@ -657,7 +663,7 @@ async function openTrip(tid) {
 
   // ============ Итоги + кнопки ============
   html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">';
-  html += '<div class="muted" style="margin-bottom:10px">';
+  html += '<div class="muted" id="trip-totals" style="margin-bottom:10px" data-plan="' + totalPlan.toFixed(2) + '" data-count="' + includedCount + '">';
   html += 'План: <b>' + fmt(totalPlan) + ' BYN</b>';
   if (isReview || isDone) html += ' · Факт: <b style="color:var(--green)">' + fmt(boughtSum) + ' BYN</b> (' + boughtCount + ' поз.)';
   html += '</div>';
@@ -750,6 +756,24 @@ function bindTripModal(tid) {
           });
           it.hidden = newHidden;
           tr.style.opacity = newHidden ? '0.35' : '1';
+          // Пересчёт итогов: сумма всех не-hidden позиций
+          const items2 = itemsByTrip(tid);
+          let t2 = 0, c2 = 0;
+          for (const it2 of items2) {
+            if (it2.hidden) continue;
+            const have2 = S.wms[it2.product_id] || 0;
+            const ov2 = it2.override_buy_qty;
+            const buy2 = (ov2 !== null && ov2 !== undefined) ? +ov2 : Math.max(0, (+it2.target_qty || 0) - have2);
+            t2 += buy2 * (+it2.plan_price_per_unit || 0);
+            c2++;
+          }
+          const totEl = document.getElementById('trip-totals');
+          if (totEl) {
+            let txt = 'План: <b>' + fmt(t2) + ' BYN</b>';
+            totEl.innerHTML = txt;
+            totEl.dataset.plan = t2.toFixed(2);
+            totEl.dataset.count = c2;
+          }
           toast(newHidden ? 'Скрыто от сына' : 'Показано');
         } catch (e) {
           inp.checked = !inp.checked;
@@ -3615,13 +3639,15 @@ async function markCooked(planId, dateISO, mealIdx) {
 
   // Модалка-предпросмотр
   let html = '<h3 style="margin-top:0">✓ Приготовлено: ' + esc(meal.name) + '</h3>';
-  html += '<p class="muted" style="margin:0 0 10px;font-size:12px">Списать со склада (' + dateISO + ')?</p>';
+  html += '<p class="muted" style="margin:0 0 10px;font-size:12px">Списать со склада (' + dateISO + ')? Можно скорректировать количество.</p>';
   html += '<table style="width:100%;font-size:12px"><thead><tr><th>Продукт</th><th class="num">Списать</th><th class="num">Остаток</th></tr></thead><tbody>';
-  for (const sp of toSpend) {
+  toSpend.forEach((sp, idx) => {
     const after = sp.before - sp.qty;
     const warn = after < 0 ? ' color:var(--red)' : '';
-    html += '<tr><td>' + esc(sp.name) + '</td><td class="num">' + sp.qty.toFixed(3) + ' ' + esc(sp.unit) + '</td><td class="num" style="' + warn + '">' + sp.before.toFixed(3) + ' → ' + after.toFixed(3) + '</td></tr>';
-  }
+    html += '<tr data-sp-idx="' + idx + '"><td>' + esc(sp.name) + '</td>';
+    html += '<td class="num"><input type="number" step="0.001" data-sp-qty="' + idx + '" value="' + sp.qty.toFixed(3) + '" style="width:90px;padding:3px;text-align:right"> ' + esc(sp.unit) + '</td>';
+    html += '<td class="num" data-sp-after="' + idx + '" style="' + warn + '">' + sp.before.toFixed(3) + ' → ' + after.toFixed(3) + '</td></tr>';
+  });
   html += '</tbody></table>';
   html += '<div class="flex" style="margin-top:14px;gap:6px">';
   html += '<button class="btn green" id="cook-confirm" style="flex:1">✓ Подтвердить списание</button>';
@@ -3631,23 +3657,46 @@ async function markCooked(planId, dateISO, mealIdx) {
 
   document.getElementById('cook-cancel').addEventListener('click', closeModal);
 
+  // 5b: live update остатка при правке qty
+  document.querySelectorAll('[data-sp-qty]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const idx = +inp.dataset.spQty;
+      const sp = toSpend[idx];
+      if (!sp) return;
+      const newQty = parseFloat(inp.value);
+      const afterEl = document.querySelector('[data-sp-after="' + idx + '"]');
+      if (afterEl) {
+        if (isFinite(newQty)) {
+          const after = sp.before - newQty;
+          afterEl.textContent = sp.before.toFixed(3) + ' → ' + after.toFixed(3);
+          afterEl.style.color = after < 0 ? 'var(--red)' : '';
+        }
+      }
+    });
+  });
+
   document.getElementById('cook-confirm').addEventListener('click', async () => {
     try {
       const source = 'meal_consumption:' + planId + ':' + dateISO + ':' + mealIdx;
       let ok = 0;
-      for (const sp of toSpend) {
+      for (let i = 0; i < toSpend.length; i++) {
+        const sp = toSpend[i];
+        // 5c: читаем актуальное значение из input (может быть отредактировано)
+        const inp = document.querySelector('[data-sp-qty="' + i + '"]');
+        const qty = inp ? parseFloat(inp.value) : sp.qty;
+        if (!isFinite(qty) || qty <= 0) continue;
         const res = await api('/rest/v1/rpc/apply_wms_delta', {
           method: 'POST',
           body: {
             p_product_id: sp.product_id,
-            p_delta: -sp.qty,
+            p_delta: -qty,
             p_reason: 'meal_consumption',
             p_source: source,
             p_author: S.user?.email || 'unknown'
           }
         });
         ok++;
-        S.wms[sp.product_id] = (S.wms[sp.product_id] || 0) - sp.qty;
+        S.wms[sp.product_id] = (S.wms[sp.product_id] || 0) - qty;
       }
       toast('✅ Списано ' + ok + ' продуктов. Отмена: см. историю склада.');
       // Помечаем блюдо как приготовленное (в json_data)
