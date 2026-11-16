@@ -368,7 +368,7 @@ function updateBadges() {
   set('badge-catalog', wmsCount);
   // План: походы в awaiting_review (красный), иначе общее количество
   const awaiting = (S.trips || []).filter(t => t.status === 'awaiting_review').length;
-  const totalTrips = (S.trips || []).length;
+  const totalTrips = (S.trips || []).filter(t => t.status !== 'cancelled').length;
   set('badge-plan', awaiting > 0 ? awaiting : (totalTrips > 0 ? totalTrips : 0), awaiting > 0);
   // Покупки: суммарно purchases
   const pchCount = (S.purchases || []).length;
@@ -412,7 +412,7 @@ function renderPlan() {
     if (groups[st]) groups[st].push(t);
   }
 
-  let html = '<div class="card"><h2>📋 Походы <span class="muted" style="font-weight:400">' + S.trips.length + '</span></h2>';
+  let html = '<div class="card"><h2>📋 Походы <span class="muted" style="font-weight:400">' + S.trips.filter(t => t.status !== 'cancelled').length + '</span></h2>';
   if (isAdmin) {
     html += '<div class="flex" style="margin-bottom:10px;flex-wrap:wrap">';
     html += '<button class="btn primary" id="add-trip-btn">+ Добавить поход</button>';
@@ -1026,13 +1026,13 @@ async function tripApprove(tid) {
 }
 
 async function tripCancel(tid) {
-  if (!confirm('Отменить поход?')) return;
+  if (!confirm('Убрать поход из плана? (переместится в «Отменённые»)')) return;
   try {
     await api('/rest/v1/trips?id=eq.' + tid, {
-      method: 'PATCH', body: { status: 'draft', approved_at: null, approved_by: null }
+      method: 'PATCH', body: { status: 'cancelled', approved_at: null, approved_by: null }
     });
-    const t = tripById(tid); if (t) { t.status = 'draft'; t.approved_at = null; t.approved_by = null; }
-    closeModal(); renderPlan(); toast('Отменён');
+    const t = tripById(tid); if (t) { t.status = 'cancelled'; t.approved_at = null; t.approved_by = null; }
+    closeModal(); renderPlan(); toast('Убран из плана');
   } catch (e) { toast('Ошибка: ' + e.message, 4000); }
 }
 
