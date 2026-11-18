@@ -650,9 +650,9 @@ async function openTrip(tid) {
     html += '<div class="f-meta">План: ' + fmt(buy, 2) + ' ' + esc(it.unit || p.unit || '') + ' · ' + fmt(planAdj, 2) + ' BYN</div>';
     if (canBuy) {
       html += '<div class="f-inputs">';
-      html += '<div><label>Кол-во (' + esc(it.unit || '') + ')</label><input type="number" step="0.01" data-act="bought-qty" value="' + (it.bought_qty || '') + '" placeholder="' + fmt(buy, 2) + '"></div>';
+      { const _have = +(S.wms && S.wms[it.product_id] || 0); html += '<div><label>Кол-во (' + esc(it.unit || '') + ')' + (_have > 0 ? ' · на складе: ' + fmt(_have, 2) : '') + '</label><input type="number" step="0.01" data-act="bought-qty" value="' + (it.bought_qty || '') + '" placeholder="' + fmt(buy, 2) + '"></div>'; }
       html += '<div><label>Сумма (BYN)</label><input type="number" step="0.01" data-act="bought-price" value="' + (it.bought_price || '') + '" placeholder="' + fmt(planAdj, 2) + '"></div>';
-      html += '<div><label>Вес</label><input type="text" data-act="bought-weight" value="' + esc(it.bought_weight || '') + '" placeholder="' + esc(it.unit || '') + '"></div>';
+      /* 17B-MOBILE-WEIGHT-FIX: поле Вес убрано (дублировало Кол-во). bought_weight остаётся в БД (используется submitFact/backfill), но на мобиле не показывается. */
       html += '</div>';
     } else if (isReview || isDone) {
       html += '<div class="f-meta" style="color:var(--green)">Факт: ' + fmt(+it.bought_qty, 2) + ' ' + esc(it.unit || '') + ' · ' + fmt(+it.bought_price, 2) + ' BYN</div>';
