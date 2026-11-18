@@ -3556,15 +3556,16 @@ function openMenuDay(dateISO) {
     for (const m of meals) {
       const label = mealNames[m.type] || m.type;
       const kcal = m.kcal_per_serving ? ' · ~' + m.kcal_per_serving + ' ккал' : '';
-      const batchMark = m.batch_id ? ' <span style="color:var(--yellow);font-size:10px">(из batch)</span>' : '';
+      const batchMark = m.batch_id ? ' <span style="color:var(--yellow);font-size:10px">(заготовка)</span>' : '';
       html += '<div style="margin-top:10px;padding:8px;background:var(--card2);border:1px solid var(--line);border-radius:4px">';
       html += '<div style="font-size:11px;color:var(--muted)">' + label + '</div>';
       html += '<div style="font-weight:600">' + esc(m.name) + batchMark + '</div>';
       html += '<div style="font-size:11px;color:var(--muted)">Порций: ' + m.servings + kcal + '</div>';
-      if (m.ingredients && m.ingredients.length) {
-        html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--blue)">Ингредиенты (' + m.ingredients.length + ')</summary><ul style="margin:6px 0 0 0;padding-left:18px;font-size:11px">';
+      const _ings = _mealIngredientsWithBatch(data, m);
+      if (_ings && _ings.length) {
+        html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--blue)">Ингредиенты (' + _ings.length + ')</summary><ul style="margin:6px 0 0 0;padding-left:18px;font-size:11px">';
         const servings = +m.servings || 1;
-        for (const ing of m.ingredients) {
+        for (const ing of _ings) {
           const isUp = (ing.unit || '').toLowerCase() === 'уп';
           const mark = isUp ? ' <span style="color:var(--muted)">(по вкусу)</span>' : '';
           const totalQty = isUp ? ing.qty : +(ing.qty * servings).toFixed(3);
@@ -3575,7 +3576,10 @@ function openMenuDay(dateISO) {
       // Кнопка "Приготовлено"
       const midx = meals.indexOf(m);
       if (m._cooked) {
-        html += '<div style="margin-top:6px;font-size:11px;color:var(--green)">✓ Приготовлено (' + (m._cooked_at || '').slice(0, 16).replace('T', ' ') + ')</div>';
+        const _lbl = m.batch_id && m._cooked_on && m._cooked_on !== dateISO
+          ? '✓ Заготовка готова ' + m._cooked_on + ' (этот день — из неё)'
+          : '✓ Приготовлено (' + (m._cooked_at || '').slice(0, 16).replace('T', ' ') + ')';
+        html += '<div style="margin-top:6px;font-size:11px;color:var(--green)">' + _lbl + '</div>';
         if (S.role === 'admin' || S.role === 'buyer') {
           html += '<button class="btn" data-uncook="' + midx + '" data-date="' + dateISO + '" data-plan="' + plan.id + '" style="margin-top:4px;font-size:11px;padding:4px 10px">↩ Отменить</button>';
         }
@@ -3588,8 +3592,32 @@ function openMenuDay(dateISO) {
     if (batchesHere.length) {
       html += '<div style="margin-top:14px;font-size:11px;color:var(--muted)">Batch-блюда в этот день:</div>';
       for (const b of batchesHere) {
+        const isCookDay = (b.cook_on === dateISO);
         html += '<div style="margin-top:6px;padding:6px;background:rgba(210,153,34,0.1);border:1px solid var(--yellow);border-radius:4px;font-size:12px">';
-        html += '<b>' + esc(b.name) + '</b> — готовится ' + b.cook_on;
+        html += '<b>' + esc(b.name) + '</b> — ' + (isCookDay ? 'готовится сегодня' : 'готовится ' + b.cook_on);
+        if (b.ingredients && b.ingredients.length && isCookDay) {
+          html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--blue)">Ингредиенты (' + b.ingredients.length + ')</summary><ul style="margin:6px 0 0 0;padding-left:18px;font-size:11px">';
+          const _serv = 7;   // batch всегда на всю семью — берём servings из plan или 7
+          const _plan = (S.mealPlans || [])[0] || {};
+          const _famSize = +((_plan.json_data && _plan.json_data.family_size) || 7);
+          for (const ing of b.ingredients) {
+            const _isUp = (ing.unit || '').toLowerCase() === 'уп';
+            const _total = _isUp ? ing.qty : +((+ing.qty || 0) * _famSize).toFixed(3);
+            html += '<li>' + esc(ing.product_name) + ': ' + _total + ' ' + esc(ing.unit || '') + (_isUp ? ' <span style="color:var(--muted)">(по вкусу)</span>' : '') + '</li>';
+          }
+          html += '</ul></details>';
+          // Проверить: уже приготовлено?
+          const _anyMeal = ((day.meals || []).find(m => m.batch_id === b.id));
+          const _alreadyCooked = _anyMeal && _anyMeal._cooked;
+          if (_alreadyCooked) {
+            html += '<div style="margin-top:6px;font-size:11px;color:var(--green)">✓ Приготовлено (' + ((_anyMeal._cooked_at || '').slice(0, 16).replace('T', ' ')) + ')</div>';
+            if (S.role === 'admin' || S.role === 'buyer') {
+              html += '<button class="btn" data-uncook="' + (day.meals || []).indexOf(_anyMeal) + '" data-date="' + dateISO + '" data-plan="' + plan.id + '" style="margin-top:4px;font-size:11px;padding:4px 10px">↩ Отменить</button>';
+            }
+          } else if (S.role === 'admin' || S.role === 'buyer') {
+            html += '<button class="btn" data-mark-cooked="' + (day.meals || []).indexOf(_anyMeal) + '" data-date="' + dateISO + '" data-plan="' + plan.id + '" style="margin-top:6px;font-size:11px;padding:4px 10px">✓ Приготовлено</button>';
+          }
+        }
         html += '</div>';
       }
     }
@@ -3614,6 +3642,68 @@ function openMenuDay(dateISO) {
 
 
 // ================= MENU: приготовлено / списание =================
+
+// ===== 17B-MATCH-FIX: подбор продукта по «человеческому» имени из ИИ-плана =====
+// ИИ пишет "Молоко 2,5%", "Сахар-песок", "Масло подсолнечное «Золотая семечка»",
+// каталог — "Молоко", "Сахар", "Масло растительное". Жёсткое toLowerCase() рвётся.
+function _normName(s) {
+  s = String(s || '').toLowerCase();
+  s = s.replace(/[«»"'"'']/g, ' ');          // кавычки-бренды -> пробел
+  s = s.replace(/\d+([.,]\d+)?\s*%/g, ' ');     // жирность 2,5%
+  s = s.replace(/\b(в\/с|с1|с2|со|высшего сорта|первого сорта|второго сорта)\b/g, ' ');
+  s = s.replace(/[()\[\]]/g, ' ');              // скобки
+  s = s.replace(/[^a-zа-яё0-9]+/gi, ' ');        // всё кроме букв/цифр -> пробел
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+function _tokens(s) { return _normName(s).split(' ').filter(t => t.length >= 2); }
+function _matchProduct(products, ingName) {
+  const nm = String(ingName || '').trim();
+  if (!nm) return null;
+  // 1. exact (старое поведение — сохраняем как быстрый путь)
+  const exact = products.find(p => (p.name || '').toLowerCase() === nm.toLowerCase());
+  if (exact) return exact;
+  // 2. normalised equality
+  const normNm = _normName(nm);
+  const normEq = products.find(p => _normName(p.name) === normNm);
+  if (normEq) return normEq;
+  // 3. longest-prefix по токенам: все токены плана входят в каталог или наоборот
+  const tgt = _tokens(nm);
+  if (!tgt.length) return null;
+  let best = null, bestScore = 0;
+  for (const p of products) {
+    const pt = _tokens(p.name);
+    if (!pt.length) continue;
+    // сколько токенов совпало (в любом порядке)
+    let match = 0;
+    for (const t of tgt) if (pt.includes(t)) match++;
+    // каталог должен содержать не меньше одного значимого токена
+    if (match === 0) continue;
+    // штраф за лишние токены в каталоге (молоко != молоко+сгущёнка)
+    const score = match / Math.max(tgt.length, pt.length);
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  // порог: 50% совпадения токенов (план "Молоко 2,5%" -> каталог "Молоко" = 1/1 = 1.0)
+  if (best && bestScore >= 0.5) return best;
+  return null;
+}
+
+
+// ===== 17B-BATCH-FIX: заготовка (было "batch") ====
+// meal.batch_id -> data.batch_dishes[id]. Если мы на дне cook_on — показываем
+// ингредиенты и разрешаем «Приготовлено» (списание один раз, метка на все eaten_on).
+function _batchById(data, bid) {
+  if (!bid) return null;
+  return ((data && data.batch_dishes) || []).find(b => b.id === bid) || null;
+}
+function _mealIngredientsWithBatch(data, meal) {
+  if (meal.batch_id) {
+    const b = _batchById(data, meal.batch_id);
+    if (b && b.ingredients && b.ingredients.length) return b.ingredients;
+  }
+  return meal.ingredients || [];
+}
+
 async function markCooked(planId, dateISO, mealIdx) {
   const plan = (S.mealPlans || []).find(p => p.id === planId);
   if (!plan) { toast('План не найден'); return; }
@@ -3624,31 +3714,47 @@ async function markCooked(planId, dateISO, mealIdx) {
   const meal = (day.meals || [])[mealIdx];
   if (!meal) { toast('Блюдо не найдено'); return; }
 
-  // Собираем списания (unit != 'уп')
+  // Собираем списания (unit != 'уп'); для заготовки (batch_id) — ингредиенты из batch_dishes
+  const ings = _mealIngredientsWithBatch(data, meal);
   const toSpend = [];
-  for (const ing of (meal.ingredients || [])) {
+  const notFound = [];
+  for (const ing of ings) {
     const isUp = (ing.unit || '').toLowerCase() === 'уп';
     if (isUp) continue;
-    const prod = (S.products || []).find(p => p.name.toLowerCase() === (ing.product_name || '').toLowerCase());
-    if (!prod) continue;
+    const prod = _matchProduct(S.products || [], ing.product_name);
     const qty = (+ing.qty || 0) * (+meal.servings || 1);
     if (qty <= 0) continue;
-    toSpend.push({ product_id: prod.id, name: prod.name, qty, unit: ing.unit, before: (S.wms[prod.id] || 0) });
+    if (!prod) { notFound.push({ plan_name: ing.product_name, unit: ing.unit, qty }); continue; }
+    const _have = S.wms[prod.id] || 0;
+    const _cap = Math.max(0, Math.min(qty, _have));   // 17B-PREVIEW-FIX: не в минус
+    toSpend.push({ product_id: prod.id, name: prod.name, plan_name: ing.product_name,
+                   qty, cap: _cap, unit: ing.unit, before: _have,
+                   missing: _have <= 0, partial: (_cap > 0 && _cap < qty) });
   }
-  if (!toSpend.length) { toast('Нет продуктов для списания'); return; }
+  if (!toSpend.length && !notFound.length) { toast('Нет продуктов для списания'); return; }
+  if (!toSpend.length) { toast('Все ингредиенты отсутствуют в каталоге или на складе — списывать нечего'); }
 
-  // Модалка-предпросмотр
+  // 17B-PREVIEW-FIX: предпросмотр с учётом нулей и not_found
   let html = '<h3 style="margin-top:0">✓ Приготовлено: ' + esc(meal.name) + '</h3>';
-  html += '<p class="muted" style="margin:0 0 10px;font-size:12px">Списать со склада (' + dateISO + ')? Можно скорректировать количество.</p>';
+  html += '<p class="muted" style="margin:0 0 10px;font-size:12px">Списать со склада (' + dateISO + ')? На складе нет = пропуск, не уходит в минус.</p>';
   html += '<table style="width:100%;font-size:12px"><thead><tr><th>Продукт</th><th class="num">Списать</th><th class="num">Остаток</th></tr></thead><tbody>';
   toSpend.forEach((sp, idx) => {
-    const after = sp.before - sp.qty;
-    const warn = after < 0 ? ' color:var(--red)' : '';
-    html += '<tr data-sp-idx="' + idx + '"><td>' + esc(sp.name) + '</td>';
-    html += '<td class="num"><input type="number" step="0.001" data-sp-qty="' + idx + '" value="' + sp.qty.toFixed(3) + '" style="width:90px;padding:3px;text-align:right"> ' + esc(sp.unit) + '</td>';
-    html += '<td class="num" data-sp-after="' + idx + '" style="' + warn + '">' + sp.before.toFixed(3) + ' → ' + after.toFixed(3) + '</td></tr>';
+    const _def = sp.cap;
+    const _after = sp.before - _def;
+    const _note = sp.missing ? ' <span style="color:var(--muted);font-size:10px">(нет на складе)</span>'
+                 : sp.partial ? ' <span style="color:var(--yellow);font-size:10px">(частично)</span>'
+                 : '';
+    html += '<tr data-sp-idx="' + idx + '"><td>' + esc(sp.name) + _note + '</td>';
+    html += '<td class="num"><input type="number" step="0.001" data-sp-qty="' + idx + '" value="' + _def.toFixed(3) + '" data-sp-max="' + sp.before.toFixed(3) + '" style="width:90px;padding:3px;text-align:right"> ' + esc(sp.unit) + '</td>';
+    html += '<td class="num" data-sp-after="' + idx + '" style="color:var(--muted)">' + sp.before.toFixed(3) + ' → ' + _after.toFixed(3) + '</td></tr>';
   });
   html += '</tbody></table>';
+  if (notFound.length) {
+    html += '<div style="margin-top:10px;padding:6px;background:rgba(255,80,80,0.1);border:1px solid var(--red);border-radius:4px;font-size:11px">';
+    html += '<b>Нет в каталоге (пропущены):</b><ul style="margin:4px 0 0 0;padding-left:18px">';
+    for (const nf of notFound) html += '<li>' + esc(nf.plan_name) + ' — ' + nf.qty.toFixed(3) + ' ' + esc(nf.unit || '') + '</li>';
+    html += '</ul></div>';
+  }
   html += '<div class="flex" style="margin-top:14px;gap:6px">';
   html += '<button class="btn green" id="cook-confirm" style="flex:1">✓ Подтвердить списание</button>';
   html += '<button class="btn" id="cook-cancel" style="flex:1">Отмена</button>';
@@ -3664,13 +3770,13 @@ async function markCooked(planId, dateISO, mealIdx) {
       const sp = toSpend[idx];
       if (!sp) return;
       const newQty = parseFloat(inp.value);
+      const maxQ = parseFloat(inp.dataset.spMax) || 0;
+      const eff = isFinite(newQty) ? Math.max(0, Math.min(newQty, maxQ)) : 0;
       const afterEl = document.querySelector('[data-sp-after="' + idx + '"]');
       if (afterEl) {
-        if (isFinite(newQty)) {
-          const after = sp.before - newQty;
-          afterEl.textContent = sp.before.toFixed(3) + ' → ' + after.toFixed(3);
-          afterEl.style.color = after < 0 ? 'var(--red)' : '';
-        }
+        const after = sp.before - eff;
+        afterEl.textContent = sp.before.toFixed(3) + ' → ' + after.toFixed(3);
+        afterEl.style.color = after < 0 ? 'var(--red)' : 'var(--muted)';
       }
     });
   });
@@ -3683,7 +3789,9 @@ async function markCooked(planId, dateISO, mealIdx) {
         const sp = toSpend[i];
         // 5c: читаем актуальное значение из input (может быть отредактировано)
         const inp = document.querySelector('[data-sp-qty="' + i + '"]');
-        const qty = inp ? parseFloat(inp.value) : sp.qty;
+        const raw = inp ? parseFloat(inp.value) : sp.cap;
+        const maxQ = inp ? (parseFloat(inp.dataset.spMax) || 0) : sp.before;
+        const qty = Math.max(0, Math.min(isFinite(raw) ? raw : 0, maxQ));   // 17B-PREVIEW-FIX: cap
         if (!isFinite(qty) || qty <= 0) continue;
         const res = await api('/rest/v1/rpc/apply_wms_delta', {
           method: 'POST',
@@ -3700,8 +3808,26 @@ async function markCooked(planId, dateISO, mealIdx) {
       }
       toast('✅ Списано ' + ok + ' продуктов. Отмена: см. историю склада.');
       // Помечаем блюдо как приготовленное (в json_data)
-      meal._cooked = true;
-      meal._cooked_at = new Date().toISOString();
+      // 17B-BATCH-FIX: заготовку помечаем на всех eaten_on-днях (иначе на 2-3 день
+      // кнопка «Приготовлено» снова появится и пользователь спишет второй раз).
+      const _nowIso = new Date().toISOString();
+      if (meal.batch_id) {
+        const b = _batchById(data, meal.batch_id);
+        const eaten = (b && b.eaten_on) || [dateISO];
+        for (const d2 of (data.days || [])) {
+          if (!eaten.includes(d2.date)) continue;
+          for (const m2 of (d2.meals || [])) {
+            if (m2.batch_id === meal.batch_id) {
+              m2._cooked = true;
+              m2._cooked_at = _nowIso;
+              m2._cooked_on = dateISO;   // реальный день готовки
+            }
+          }
+        }
+      } else {
+        meal._cooked = true;
+        meal._cooked_at = _nowIso;
+      }
       await api('/rest/v1/meal_plans?id=eq.' + planId, {
         method: 'PATCH',
         body: { json_data: data }
@@ -3726,7 +3852,21 @@ async function unconsumedMeal(planId, dateISO, mealIdx) {
   const meal = (day.meals || [])[mealIdx];
   if (!meal) { toast('Блюдо не найдено'); return; }
 
-  const sourcePrefix = 'meal_consumption:' + planId + ':' + dateISO + ':' + mealIdx;
+  // 17B-UNCOOK-BATCH: для заготовки списание шло под днём готовки (cook_on),
+  // а «Отменить» можно нажать и со 2-3 дня (meal._cooked_on != dateISO).
+  let _srcDate = dateISO;
+  let _srcIdx = mealIdx;
+  if (meal.batch_id) {
+    const _b = _batchById(data, meal.batch_id);
+    _srcDate = meal._cooked_on || (_b && _b.cook_on) || dateISO;
+    // найти meal-индекс в том дне, где был клик готовки
+    const _cookDay = (data.days || []).find(d => d.date === _srcDate);
+    if (_cookDay) {
+      const _mi = (_cookDay.meals || []).findIndex(m => m.batch_id === meal.batch_id);
+      if (_mi >= 0) _srcIdx = _mi;
+    }
+  }
+  const sourcePrefix = 'meal_consumption:' + planId + ':' + _srcDate + ':' + _srcIdx;
   if (!confirm('Отменить списание за «' + meal.name + '»? Продукты вернутся на склад.')) return;
 
   try {
@@ -3753,9 +3893,22 @@ async function unconsumedMeal(planId, dateISO, mealIdx) {
         console.warn('revert fail', rec.id, e);
       }
     }
-    // 3) Снять _cooked в json_data
-    delete meal._cooked;
-    delete meal._cooked_at;
+    // 3) Снять _cooked в json_data (для заготовки — со всех дней)
+    if (meal.batch_id) {
+      for (const d2 of (data.days || [])) {
+        for (const m2 of (d2.meals || [])) {
+          if (m2.batch_id === meal.batch_id) {
+            delete m2._cooked;
+            delete m2._cooked_at;
+            delete m2._cooked_on;
+          }
+        }
+      }
+    } else {
+      delete meal._cooked;
+      delete meal._cooked_at;
+      delete meal._cooked_on;
+    }
     await api('/rest/v1/meal_plans?id=eq.' + planId, {
       method: 'PATCH',
       body: { json_data: data }
