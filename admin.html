@@ -27,6 +27,17 @@ td input,td select{width:100%;padding:4px 6px;font-size:12px}
 label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
 #login-card{max-width:380px;margin:80px auto}
 #login-card input{width:100%}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.65);display:none;align-items:center;justify-content:center;z-index:1000}
+.modal-bg.show{display:flex}
+.modal-box{background:var(--card2,#1e1e1e);border:1px solid var(--line,#333);border-radius:8px;padding:18px 20px;min-width:380px;max-width:520px;width:90vw;color:var(--text,#ddd);box-shadow:0 8px 32px rgba(0,0,0,0.5)}
+.modal-box h3{margin:0 0 12px;font-size:15px;color:var(--green,#6c6)}
+.modal-box .row{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+.modal-box .row label{min-width:110px;font-size:12px;color:var(--muted,#888)}
+.modal-box .row input,.modal-box .row select{flex:1;padding:6px 8px;font-size:13px;background:#111;color:#ddd;border:1px solid var(--line,#333);border-radius:4px}
+.modal-box .btns{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
+.modal-box .btns button{padding:7px 16px;font-size:13px;cursor:pointer;border-radius:4px;border:1px solid var(--line,#333);background:#222;color:#ddd}
+.modal-box .btns button.primary{background:#2a6;border-color:#2a6;color:#fff}
+.modal-box .err{color:#e55;font-size:12px;margin-top:6px;min-height:14px}
 .badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:var(--blue);color:#fff;margin-left:4px}
 .badge.off{background:var(--muted)}
 @media(max-width:700px){table{font-size:12px}th,td{padding:4px}}
@@ -91,6 +102,29 @@ label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
     <span id="purge-msg" style="color:var(--muted);font-size:12px"></span>
   </div>
 </div>
+</div>
+
+<!-- 17B-ADMIN-MODAL -->
+<div id="pm-modal" class="modal-bg">
+  <div class="modal-box">
+    <h3 id="pm-title">Новый продукт</h3>
+    <div class="row"><label>Название</label><input id="pm-name" type="text" placeholder="Сахар-песок"></div>
+    <div class="row"><label>Категория</label><select id="pm-cat">
+      <option>бакалея</option><option>молочка</option><option>мясо</option><option>рыба</option>
+      <option>овощи</option><option>фрукты</option><option>хлеб</option><option>специи</option>
+      <option>напитки</option><option>заморозка</option><option>прочее</option>
+    </select></div>
+    <div class="row"><label>Единица</label><select id="pm-unit">
+      <option>кг</option><option>г</option><option>л</option><option>мл</option><option>шт</option><option>уп</option>
+    </select></div>
+    <div class="row"><label>Ккал/100г</label><input id="pm-kcal" type="number" step="0.1" placeholder="пусто = не считать"></div>
+    <div class="row"><label>Общий</label><input id="pm-shared" type="checkbox"></div>
+    <div class="err" id="pm-err"></div>
+    <div class="btns">
+      <button id="pm-cancel">Отмена</button>
+      <button id="pm-save" class="primary">Сохранить</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -225,6 +259,7 @@ function render() {
     if (p.is_deleted) {
       html += '<button class="btn" data-restore="' + p.id + '" title="Восстановить">↩</button>';
     } else {
+      html += '<button class="btn" data-edit="' + p.id + '" title="Редактировать в модалке">✎</button> ';
       html += '<button class="btn red" data-del="' + p.id + '" title="Удалить">🗑</button>';
     }
     html += '</td></tr>';
@@ -265,20 +300,64 @@ async function deleteProduct(pid) {
   }
 }
 
-async function addProduct() {
-  const name = prompt('Название продукта:');
-  if (!name) return;
-  const cat = prompt('Категория (бакалея/молочка/мясо/овощи/фрукты/хлеб/специи/прочее):', 'бакалея');
-  if (!cat) return;
-  const unit = prompt('Единица (кг/л/шт/уп):', 'кг');
-  if (!unit) return;
-  const kcal = prompt('Ккал на 100 г (пусто = не считать):', '');
-  try {
-    await api('/rest/v1/products', { method: 'POST', prefer: 'return=minimal',
-      body: { name, category: cat, unit, kcal_per_100g: kcal ? +kcal : null, is_shared: false, family_id: 1 } });
-    await loadProducts();
-  } catch (e) { alert('Ошибка: ' + e.message); }
+// 17B-ADMIN-MODAL: модалка add/edit вместо prompt()
+let _pmEditId = null;
+
+function openProductModal(pid) {
+  _pmEditId = (pid == null) ? null : +pid;
+  const m = document.getElementById('pm-modal');
+  const p = _pmEditId != null ? S.products.find(x => x.id === _pmEditId) : null;
+  document.getElementById('pm-title').textContent = p ? ('Продукт #' + p.id + ': ' + (p.name || '')) : 'Новый продукт';
+  document.getElementById('pm-name').value = p ? (p.name || '') : '';
+  document.getElementById('pm-cat').value = p ? (p.category || 'бакалея') : 'бакалея';
+  document.getElementById('pm-unit').value = p ? (p.unit || 'кг') : 'кг';
+  document.getElementById('pm-kcal').value = p && p.kcal_per_100g != null ? p.kcal_per_100g : '';
+  document.getElementById('pm-shared').checked = p ? !!p.is_shared : false;
+  document.getElementById('pm-err').textContent = '';
+  m.classList.add('show');
+  setTimeout(() => document.getElementById('pm-name').focus(), 50);
 }
+
+function closeProductModal() {
+  document.getElementById('pm-modal').classList.remove('show');
+  _pmEditId = null;
+}
+
+async function saveProductModal() {
+  const name = document.getElementById('pm-name').value.trim();
+  const category = document.getElementById('pm-cat').value;
+  const unit = document.getElementById('pm-unit').value;
+  const kcalRaw = document.getElementById('pm-kcal').value.trim();
+  const is_shared = document.getElementById('pm-shared').checked;
+  const errEl = document.getElementById('pm-err');
+  if (!name) { errEl.textContent = 'Название обязательно'; return; }
+  const body = { name, category, unit, kcal_per_100g: kcalRaw === '' ? null : +kcalRaw, is_shared };
+  errEl.textContent = '';
+  try {
+    if (_pmEditId != null) {
+      await api('/rest/v1/products?id=eq.' + _pmEditId, { method: 'PATCH', prefer: 'return=minimal', body });
+    } else {
+      body.family_id = 1;
+      await api('/rest/v1/products', { method: 'POST', prefer: 'return=minimal', body });
+    }
+    closeProductModal();
+    await loadProducts();
+  } catch (e) {
+    errEl.textContent = 'Ошибка: ' + e.message;
+  }
+}
+
+function _bindModal() {
+  const bg = document.getElementById('pm-modal');
+  if (!bg) return;
+  document.getElementById('pm-cancel').addEventListener('click', closeProductModal);
+  document.getElementById('pm-save').addEventListener('click', saveProductModal);
+  bg.addEventListener('click', (e) => { if (e.target === bg) closeProductModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && bg.classList.contains('show')) closeProductModal(); });
+}
+setTimeout(_bindModal, 0);
+
+async function addProduct() { openProductModal(null); }
 
 async function purgeHistory() {
   const days = +document.getElementById('purge-age').value;
@@ -331,6 +410,8 @@ document.getElementById('tbody').addEventListener('change', (e) => {
 });
 
 document.getElementById('tbody').addEventListener('click', (e) => {
+  const editBtn = e.target.closest('[data-edit]');
+  if (editBtn) { openProductModal(+editBtn.dataset.edit); return; }   // 17B-ADMIN-MODAL
   const delBtn = e.target.closest('[data-del]');
   if (delBtn) { deleteProduct(+delBtn.dataset.del); return; }
   const restBtn = e.target.closest('[data-restore]');
