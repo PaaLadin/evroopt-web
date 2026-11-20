@@ -115,7 +115,11 @@ async function api(path, opts = {}) {
     const err = await res.text();
     throw new Error(res.status + ' ' + err.slice(0, 300));
   }
-  return res.status === 204 ? null : res.json();
+  if (res.status === 204) return null;
+  // 17B-API-204-FIX: PostgREST при Prefer:return=minimal отдаёт 200 с пустым
+  // телом. Прошлый код падал на res.json() (Unexpected end of JSON input).
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
 }
 
 async function login(email, password) {
