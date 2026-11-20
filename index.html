@@ -535,6 +535,15 @@ async function openTrip(tid) {
     html += '</div>';
   }
 
+  // 17B-P0B-RETURN-DRAFT: админ может вернуть approved/in_progress в draft,
+  // чтобы добавить/удалить позиции. Не показываем для awaiting_review — там
+  // уже «↩ Вернуть сыну» (rejectReview).
+  if (isAdmin && isApproved) {
+    html += '<div class="flex" style="margin:10px 0;flex-wrap:wrap">';
+    html += '<button class="btn red" data-act="return-to-draft" data-tid="' + tid + '" title="Вернуть план в черновики (можно будет добавить/удалить позиции)">↩ Вернуть в черновики</button>';
+    html += '</div>';
+  }
+
   // Считаем итоги
   let totalPlan = 0, includedCount = 0, boughtCount = 0, boughtSum = 0;
   for (const it of items) {
@@ -565,6 +574,9 @@ async function openTrip(tid) {
   let _dividerShown = false;
 
   for (const it of items) {
+    // 17B-P0A-HIDE-ZERO-OVERRIDE: admin снял «Купить» -> override=0.
+    // Для buyer (не может править) такая позиция не должна быть видна.
+    if (!canAdminEdit && (it.hidden || (it.override_buy_qty === 0 || it.override_buy_qty === '0'))) continue;
     if (it.hidden && !canAdminEdit) continue;
     const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
     const have = S.wms[it.product_id] || 0;
@@ -626,6 +638,8 @@ async function openTrip(tid) {
   // ============ MOBILE ============
   html += '<div class="fact-cards-mobile">';
   for (const it of items) {
+    // 17B-P0A-HIDE-ZERO-OVERRIDE: то же, что в desktop-цикле
+    if (!canAdminEdit && (it.hidden || (it.override_buy_qty === 0 || it.override_buy_qty === '0'))) continue;
     if (it.hidden && !canAdminEdit) continue;
     const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
     const have = S.wms[it.product_id] || 0;
@@ -726,6 +740,7 @@ function bindTripModal(tid) {
       if (act === 'additem')       return addItemModal(tid);
       if (act === 'submit-fact')   return submitFact(tid);
       if (act === 'buyer-recall')  return recallReview(tid);
+      if (act === 'return-to-draft') return returnToDraft(tid);   // 17B-P0B-RETURN-DRAFT
       if (act === 'approve-to-stock') return approveToStock(tid);
       if (act === 'reject-review') return rejectReview(tid);
       if (act === 'force-finish')  return forceFinish(tid);
@@ -788,13 +803,19 @@ function bindTripModal(tid) {
       inp.addEventListener('change', async () => {
         const val = inp.value.trim();
         const newVal = val === '' ? null : parseFloat(val);
+        // 17B-P0A-HIDE-ZERO-OVERRIDE: admin ввёл 0 -> скрываем от buyer (hidden=true).
+        // Если очистил поле (null) — вернём hidden=false, чтобы позиция снова стала видна.
+        const patch = { override_buy_qty: newVal };
+        if (newVal === 0) patch.hidden = true;
+        else if (newVal === null && it.hidden) patch.hidden = false;
         try {
           await api('/rest/v1/trip_items?id=eq.' + iid, {
             method: 'PATCH', prefer: 'return=minimal',
-            body: { override_buy_qty: newVal }
+            body: patch
           });
           it.override_buy_qty = newVal;
-          toast('Купить: ' + fmt(newVal, 2));
+          if ('hidden' in patch) it.hidden = patch.hidden;
+          toast('Купить: ' + fmt(newVal, 2) + ('hidden' in patch ? (patch.hidden ? ' (скрыто)' : ' (видно)') : ''));
         } catch (e) {
           toast('Ошибка: ' + e.message, 4000);
         }
@@ -1474,6 +1495,40 @@ async function backfillPricesSave(tid) {
   await loadAll();
   closeModal();
   openTrip(tid);
+}
+
+
+// ===== 17B-P0B-RETURN-DRAFT: админ возвращает approved/in_progress -> draft =====
+async function returnToDraft(tid) {
+  if (S.role !== 'admin') { toast('Только для админа'); return; }
+  const t = tripById(tid);
+  if (!t) { toast('Поход не найден'); return; }
+  if (t.status !== 'approved' && t.status !== 'in_progress') {
+    toast('Вернуть в черновики можно только утверждённый план');
+    return;
+  }
+  // Проверим: есть ли уже факт от buyer (bought_*)
+  const items = itemsByTrip(tid);
+  const withFact = items.filter(it => it.bought_qty !== null && it.bought_qty !== undefined && +it.bought_qty > 0);
+  let msg = 'Вернуть план в черновики?\n\nПосле возврата можно будет добавить/удалить позиции, потом снова утвердить.';
+  if (withFact.length) {
+    msg = '⚠ ВНИМАНИЕ: buyer уже ввёл факт по ' + withFact.length + ' поз.\n\n' +
+          'Если вернёшь в черновики — статус станет draft, но факт в trip_items.bought_* останется. ' +
+          'При следующем аппруве факт не сбросится. Точно вернуть?\n\n' + msg;
+  }
+  if (!confirm(msg)) return;
+  try {
+    await api('/rest/v1/trips?id=eq.' + tid, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { status: 'draft', approved_at: null, approved_by: null }
+    });
+    toast('↩ План возвращён в черновики');
+    await loadAll();
+    closeModal();
+    renderPlan();
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 5000);
+  }
 }
 
 // ================= RENDER: FACT =================
