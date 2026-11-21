@@ -692,8 +692,11 @@ async function openTrip(tid) {
     html += '<button class="btn" data-act="buyer-recall" style="margin-top:8px;width:100%">↩ Отозвать (редактировать заново)</button>';
   }
 
-  // Admin в review: принять / вернуть
+  // Admin в review: принять / вернуть + добавить забытую позицию
   if (canAdminReview) {
+    // 17B-P1-REVIEW-ADDITEM: админ может добавить позицию (сын купил сверх плана).
+    // addItemModal открывает список продуктов, Insert в trip_items для trip_id.
+    html += '<button class="btn" data-act="additem" data-tid="' + tid + '" style="margin-top:8px;width:100%">+ Позиция (купил сверх плана)</button>';
     html += '<button class="btn green modal-save-btn" data-act="approve-to-stock" style="margin-top:8px">✔ Принять на склад</button>';
     html += '<button class="btn" data-act="reject-review" style="margin-top:6px;width:100%">↩ Вернуть сыну</button>';
   }
@@ -722,6 +725,60 @@ async function openTrip(tid) {
 
   modal(html);
   bindTripModal(tid);
+}
+
+// 17B-P2-LIVE-RECALC: единый пересчёт строки + итога без перерендера модалки.
+// Вызывается из buy-qty / bought-qty / bought-price / bought-toggle.
+function _recalcTripUI(tid) {
+  const items = itemsByTrip(tid);
+  let totalPlan = 0, includedCount = 0, boughtSum = 0, boughtCount = 0;
+  for (const it of items) {
+    if (it.hidden) continue;
+    if (it.override_buy_qty === 0 || it.override_buy_qty === '0') continue;
+    const have = S.wms[it.product_id] || 0;
+    const ov = it.override_buy_qty;
+    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    totalPlan += buy * (+it.plan_price_per_unit || 0);
+    includedCount++;
+    if (it.bought_qty && +it.bought_qty > 0 && it.bought_price != null && it.bought_price !== '') {
+      boughtSum += (+it.bought_price || 0);
+      boughtCount++;
+    }
+  }
+  const totEl = document.getElementById('trip-totals');
+  if (totEl) {
+    totEl.dataset.plan = totalPlan.toFixed(2);
+    totEl.dataset.count = includedCount;
+    let t = 'План: <b>' + fmt(totalPlan) + ' BYN</b>';
+    if (boughtCount > 0) t += ' · Факт: <b style="color:var(--green)">' + fmt(boughtSum) + ' BYN</b> (' + boughtCount + ' поз.)';
+    totEl.innerHTML = t;
+  }
+  // Desktop: обновить td.num[2] (planAdj) для каждой видимой строки
+  document.querySelectorAll('tr[data-iid]').forEach(tr => {
+    const iid = +tr.dataset.iid;
+    const it = items.find(x => x.id === iid);
+    if (!it) return;
+    const have = S.wms[it.product_id] || 0;
+    const ov = it.override_buy_qty;
+    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    const planAdj = buy * (+it.plan_price_per_unit || 0);
+    const nums = tr.querySelectorAll('td.num');
+    if (nums[2]) nums[2].textContent = fmt(planAdj, 2);
+  });
+  // Mobile: обновить .f-meta «План: N unit · S BYN» (только если это не «Факт:»-строка)
+  document.querySelectorAll('.fact-row[data-iid]').forEach(card => {
+    const iid = +card.dataset.iid;
+    const it = items.find(x => x.id === iid);
+    if (!it) return;
+    const have = S.wms[it.product_id] || 0;
+    const ov = it.override_buy_qty;
+    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    const planAdj = buy * (+it.plan_price_per_unit || 0);
+    const meta = card.querySelector('.f-meta');
+    if (meta && !(meta.textContent || '').includes('Факт:')) {
+      meta.textContent = 'План: ' + fmt(buy, 2) + ' ' + (it.unit || '') + ' · ' + fmt(planAdj, 2) + ' BYN';
+    }
+  });
 }
 
 function bindTripModal(tid) {
@@ -815,6 +872,7 @@ function bindTripModal(tid) {
           });
           it.override_buy_qty = newVal;
           if ('hidden' in patch) it.hidden = patch.hidden;
+          _recalcTripUI(tid);   // 17B-P2-LIVE-RECALC
           toast('Купить: ' + fmt(newVal, 2) + ('hidden' in patch ? (patch.hidden ? ' (скрыто)' : ' (видно)') : ''));
         } catch (e) {
           toast('Ошибка: ' + e.message, 4000);
@@ -829,11 +887,15 @@ function bindTripModal(tid) {
         it.bought_qty = inp.value === '' ? null : parseFloat(inp.value);
         const tr = inp.closest('tr') || inp.closest('.fact-row');
         if (tr) tr.classList.toggle('row-done', it.bought_qty > 0);
+        _recalcTripUI(tid);   // 17B-P2-LIVE-RECALC
       });
       return;
     }
     if (act === 'bought-price') {
-      inp.addEventListener('input', () => { it.bought_price = inp.value === '' ? null : parseFloat(inp.value); });
+      inp.addEventListener('input', () => {
+        it.bought_price = inp.value === '' ? null : parseFloat(inp.value);
+        _recalcTripUI(tid);   // 17B-P2-LIVE-RECALC
+      });
       return;
     }
     if (act === 'bought-weight') {
@@ -863,6 +925,7 @@ function bindTripModal(tid) {
           if (priceInput) priceInput.value = '';
         }
         tr.classList.toggle('done', inp.checked);
+        _recalcTripUI(tid);   // 17B-P2-LIVE-RECALC
       });
       return;
     }
