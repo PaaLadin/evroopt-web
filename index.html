@@ -1679,6 +1679,115 @@ async function renderAudit() {
     html += '</div></div>';
     root.innerHTML = html;
 
+    // 17B-AUDIT-EXT: диапазон дат + расширенный анализ
+    html += '<div class="card" style="margin-top:14px">';
+    html += '<h2>🔍 Анализ по диапазону <span class="muted" style="font-weight:400">самый дорогой · тяжёлый · частый · средний чек</span></h2>';
+    html += '<div class="row" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;font-size:12px">';
+    html += '<label>С <input type="date" id="audit-from" style="padding:4px 6px"></label>';
+    html += '<label>По <input type="date" id="audit-to" style="padding:4px 6px"></label>';
+    html += '<button class="btn primary" id="audit-apply">Применить</button>';
+    html += '<button class="btn" id="audit-clear">Сброс</button>';
+    html += '<span class="muted" id="audit-range-info"></span>';
+    html += '</div>';
+    html += '<div id="audit-ext-body" class="muted">Выбери диапазон и нажми «Применить». Пустые поля = вся история.</div>';
+    html += '</div>';
+    root.innerHTML = html;
+
+    // 17B-AUDIT-EXT: хелперы + логика
+    function _toGrams(qty, unit) {
+      if (!qty || !unit) return 0;
+      const u = String(unit).toLowerCase();
+      if (u === 'кг') return +qty * 1000;
+      if (u === 'г') return +qty;
+      if (u === 'л') return +qty * 1000;
+      if (u === 'мл') return +qty;
+      return null;   // шт/уп - не масса
+    }
+
+    function _calcRange() {
+      const fromEl = document.getElementById('audit-from');
+      const toEl = document.getElementById('audit-to');
+      const from = fromEl && fromEl.value ? fromEl.value : null;
+      const to = toEl && toEl.value ? toEl.value : null;
+      const f = purchases.filter(p => {
+        const d = (p.bought_at || '').slice(0, 10);
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+      const totalSum = f.reduce((s, p) => s + (+p.total_price || 0), 0);
+      const n = f.length;
+      const avgCheck = n ? totalSum / n : 0;
+
+      const byP = {};
+      for (const p of f) {
+        const pid = p.product_id;
+        if (!byP[pid]) byP[pid] = { pid, sum: 0, count: 0, qty: 0, mass: 0, unit: p.unit, priceMax: 0 };
+        byP[pid].sum += +p.total_price || 0;
+        byP[pid].count++;
+        byP[pid].qty += +p.qty || 0;
+        const g = _toGrams(p.qty, p.unit);
+        if (g != null) byP[pid].mass += g;
+        const ppu = +p.price_per_unit || 0;
+        if (ppu > byP[pid].priceMax) byP[pid].priceMax = ppu;
+        if (!byP[pid].unit) byP[pid].unit = p.unit;
+      }
+      const arr = Object.values(byP);
+
+      const topPrice = arr.slice().filter(x => x.priceMax > 0).sort((a, b) => b.priceMax - a.priceMax).slice(0, 10);
+      const topMass = arr.slice().filter(x => x.mass > 0).sort((a, b) => b.mass - a.mass).slice(0, 10);
+      const topFreq = arr.slice().sort((a, b) => b.count - a.count).slice(0, 10);
+      const topSum = arr.slice().sort((a, b) => b.sum - a.sum).slice(0, 10);
+
+      return { from, to, n, totalSum, avgCheck, topPrice, topMass, topFreq, topSum };
+    }
+
+    function _renderExt() {
+      const body = document.getElementById('audit-ext-body');
+      const info = document.getElementById('audit-range-info');
+      if (!body) return;
+      const r = _calcRange();
+      const rangeTxt = (r.from || '—') + ' … ' + (r.to || '—');
+      if (info) info.textContent = rangeTxt + ' · ' + r.n + ' покупок';
+      if (!r.n) { body.innerHTML = '<div class="empty">В этом диапазоне нет покупок</div>'; return; }
+
+      let h = '';
+      h += '<div class="grid">';
+      h += '<div class="trip-card"><div class="tc-items">Суммарный расход</div><div class="tc-sum">' + fmt(r.totalSum) + ' BYN</div></div>';
+      h += '<div class="trip-card"><div class="tc-items">Средний чек</div><div class="tc-sum">' + fmt(r.avgCheck) + ' BYN</div></div>';
+      h += '<div class="trip-card"><div class="tc-items">Покупок</div><div class="tc-sum">' + r.n + '</div></div>';
+      h += '</div>';
+
+      function _tbl(title, arr, valFmt, valHeader) {
+        if (!arr.length) return '';
+        let t = '<h3 style="font-size:12px;margin:14px 0 6px;color:var(--muted)">' + title + '</h3>';
+        t += '<table><thead><tr><th>#</th><th>Продукт</th><th class="num">' + valHeader + '</th><th class="num">Сумма</th><th class="num">Раз</th></tr></thead><tbody>';
+        let i = 1;
+        for (const x of arr) {
+          const p = productById(x.pid) || { name: '#' + x.pid };
+          t += '<tr><td>' + i + '</td><td>' + esc(p.name) + '</td><td class="num">' + valFmt(x) + '</td><td class="num">' + fmt(x.sum) + '</td><td class="num">' + x.count + '</td></tr>';
+          i++;
+        }
+        t += '</tbody></table>';
+        return t;
+      }
+
+      h += _tbl('💎 Самый дорогой (по макс. цене за ед.)', r.topPrice, x => fmt(x.priceMax) + ' BYN/' + esc(x.unit || ''), 'Цена');
+      h += _tbl('⚖️ Самый тяжёлый (по массе, кг/л/г/мл)', r.topMass, x => (x.mass >= 1000 ? (x.mass / 1000).toFixed(2) + ' кг' : x.mass.toFixed(0) + ' г'), 'Масса');
+      h += _tbl('🔁 Самый частый (по кол-ву покупок)', r.topFreq, x => x.count + ' раз', 'Частота');
+      h += _tbl('💰 Самый дорогой по сумме', r.topSum, x => fmt(x.sum) + ' BYN', 'Сумма');
+
+      body.innerHTML = h;
+    }
+
+    document.getElementById('audit-apply').addEventListener('click', _renderExt);
+    document.getElementById('audit-clear').addEventListener('click', () => {
+      document.getElementById('audit-from').value = '';
+      document.getElementById('audit-to').value = '';
+      _renderExt();
+    });
+    _renderExt();
     document.getElementById('audit-csv').addEventListener('click', () => {
       let csv = 'date,product,qty,unit,price_per_unit,total,bought_by\n';
       for (const p of purchases) {
