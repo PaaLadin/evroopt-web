@@ -662,6 +662,14 @@ async function openTrip(tid) {
     html += '</div>';
     html += '<div class="f-name"><a href="' + esc(p.search_url || '#') + '" target="_blank">' + esc(p.name) + '</a></div>';
     html += '<div class="f-meta">План: ' + fmt(buy, 2) + ' ' + esc(it.unit || p.unit || '') + ' · ' + fmt(planAdj, 2) + ' BYN</div>';
+    // 17B-MOBILE-ADMIN-EDIT: админ в draft правит «Купить» прямо в мобильной карточке.
+    // Без этого на телефоне была только галочка «включить/выключить», а число
+    // «Купить» оставалось с сервера, и родитель не мог уменьшить объём.
+    if (canAdminEdit) {
+      html += '<div class="f-inputs">';
+      html += '<div><label>Купить (' + esc(it.unit || '') + ')</label><input type="number" step="0.01" data-act="buy-qty" value="' + fmt(buy, 2) + '"></div>';
+      html += '</div>';
+    }
     if (canBuy) {
       html += '<div class="f-inputs">';
       { const _have = +(S.wms && S.wms[it.product_id] || 0); html += '<div><label>Кол-во (' + esc(it.unit || '') + ')' + (_have > 0 ? ' · на складе: ' + fmt(_have, 2) : '') + '</label><input type="number" step="0.01" data-act="bought-qty" value="' + (it.bought_qty || '') + '" placeholder="' + fmt(buy, 2) + '"></div>'; }

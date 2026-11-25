@@ -38,6 +38,11 @@ label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
 .modal-box .btns button{padding:7px 16px;font-size:13px;cursor:pointer;border-radius:4px;border:1px solid var(--line,#333);background:#222;color:#ddd}
 .modal-box .btns button.primary{background:#2a6;border-color:#2a6;color:#fff}
 .modal-box .err{color:#e55;font-size:12px;margin-top:6px;min-height:14px}
+.tabs{display:flex;gap:2px;margin:12px 0;border-bottom:1px solid var(--line,#333);flex-wrap:wrap}
+.tab-btn{background:transparent;border:none;padding:10px 16px;font-size:13px;color:var(--muted,#888);cursor:pointer;border-bottom:2px solid transparent}
+.tab-btn:hover{color:var(--text,#ddd)}
+.tab-btn.active{color:var(--green,#6c6);border-bottom-color:var(--green,#6c6);font-weight:600}
+.tab-content{margin-top:6px}
 .badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:var(--blue);color:#fff;margin-left:4px}
 .badge.off{background:var(--muted)}
 @media(max-width:700px){table{font-size:12px}th,td{padding:4px}}
@@ -61,6 +66,35 @@ label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
   <button class="btn" id="logout-btn">🚪 Выйти</button>
 </header>
 
+<!-- 17B-ADMIN-TABS: 5 вкладок -->
+<nav class="tabs" id="tabs">
+  <button class="tab-btn" data-tab="families">Семьи</button>
+  <button class="tab-btn active" data-tab="products">Продукты</button>
+  <button class="tab-btn" data-tab="audit">Аудит</button>
+  <button class="tab-btn" data-tab="settings">Настройки</button>
+  <button class="tab-btn" data-tab="danger">Опасная</button>
+</nav>
+
+<div class="tab-content" data-tab="families" hidden>
+  <div class="card">
+    <h2 style="margin:0 0 8px;font-size:16px">Семьи <button class="btn green" id="fam-add" style="float:right;font-size:12px">+ Семья</button></h2>
+    <div id="fam-list" class="muted" style="font-size:12px">Загрузка...</div>
+  </div>
+  <div class="card">
+    <h2 style="margin:0 0 8px;font-size:16px">Пользователи</h2>
+    <div class="flex" style="margin-bottom:10px">
+      <input type="email" id="usr-email" placeholder="email@example.com" style="flex:1;min-width:180px">
+      <input type="password" id="usr-pass" placeholder="пароль" style="width:140px">
+      <select id="usr-role"><option>buyer</option><option>admin</option><option>superadmin</option></select>
+      <select id="usr-family"></select>
+      <button class="btn green" id="usr-add">+ Пользователь</button>
+    </div>
+    <div id="usr-msg" class="muted" style="font-size:12px;min-height:18px"></div>
+    <div id="usr-list" class="muted" style="font-size:12px">Загрузка...</div>
+  </div>
+</div>
+
+<div class="tab-content" data-tab="products">
 <div class="card">
   <div class="flex" style="margin-bottom:10px">
     <input type="text" id="search" placeholder="Поиск..." style="flex:1;min-width:150px">
@@ -82,6 +116,7 @@ label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
         <th style="width:60px">Ед</th>
         <th style="width:80px">Ккал/100</th>
         <th style="width:60px">Общий</th>
+        <th style="width:50px" title="Кол-во trip_items с этим продуктом">Исп.</th>
         <th style="width:80px"></th>
       </tr></thead>
       <tbody id="tbody"></tbody>
@@ -89,7 +124,34 @@ label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
   </div>
 </div>
 
-<div class="card">
+</div>
+
+<div class="tab-content" data-tab="audit" hidden>
+  <div class="card">
+    <h2 style="font-size:16px">Аудит <span class="muted" style="font-weight:400;font-size:12px">по городам и магазинам</span></h2>
+    <div id="admin-audit-body" class="muted">Загрузка...</div>
+  </div>
+</div>
+
+<div class="tab-content" data-tab="settings" hidden>
+  <div class="card"><h2 style="font-size:16px">Категории</h2>
+    <div class="flex" style="margin-bottom:8px"><input id="set-cat-new" placeholder="Новая" style="flex:1"><button class="btn green" id="set-cat-add">+</button></div>
+    <div id="set-cat-list"></div></div>
+  <div class="card"><h2 style="font-size:16px">Единицы</h2>
+    <div class="flex" style="margin-bottom:8px"><input id="set-unit-new" placeholder="Новая" style="flex:1"><button class="btn green" id="set-unit-add">+</button></div>
+    <div id="set-unit-list"></div></div>
+  <div class="card"><h2 style="font-size:16px">Города</h2>
+    <div class="flex" style="margin-bottom:8px"><input id="set-city-new" placeholder="Город" style="flex:1"><input id="set-city-alias" placeholder="алиасы" style="flex:1"><button class="btn green" id="set-city-add">+</button></div>
+    <div id="set-city-list"></div></div>
+  <div class="card"><h2 style="font-size:16px">Магазины</h2>
+    <div class="flex" style="margin-bottom:8px"><input id="set-store-new" placeholder="Новый" style="flex:1"><button class="btn green" id="set-store-add">+</button></div>
+    <div id="set-store-list"></div></div>
+  <div class="card"><h2 style="font-size:16px">Лимиты</h2><div id="set-limits-list"></div></div>
+</div>
+
+<div class="tab-content" data-tab="danger" hidden>
+  <div class="card"><h2>Опасная зона</h2><div class="empty">TODO: очистка от-до, по семье, предпросмотр</div></div>
+  <div class="card">
   <h2 style="margin:0 0 8px;font-size:16px">🧹 Очистка истории</h2>
   <p style="color:var(--muted);font-size:12px;margin:0 0 8px">Удаляет purchases, wms_history, meal_plans старше указанного срока. Действие необратимо.</p>
   <div class="flex">
@@ -102,7 +164,8 @@ label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
     <span id="purge-msg" style="color:var(--muted);font-size:12px"></span>
   </div>
 </div>
-</div>
+</div><!-- /tab-content danger -->
+</div><!-- /#app -->
 
 <!-- 17B-ADMIN-MODAL -->
 <div id="pm-modal" class="modal-bg">
@@ -211,6 +274,13 @@ async function refreshIfNeeded() {
 
 async function loadProducts() {
   S.products = await api('/rest/v1/products?select=id,name,category,unit,kcal_per_100g,is_shared,is_deleted,family_id&order=name');
+  // 17B-PRODUCTS-GROUP: usage = кол-во trip_items с этим product_id
+  try {
+    const ti = await api('/rest/v1/trip_items?select=product_id&limit=5000');
+    const usage = {};
+    for (const row of ti) usage[row.product_id] = (usage[row.product_id] || 0) + 1;
+    S.tripItemUsage = usage;
+  } catch (e) { S.tripItemUsage = {}; }
   render();
 }
 
@@ -240,9 +310,33 @@ function render() {
     tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Ничего не найдено</td></tr>';
     return;
   }
-  let html = '';
-  const cats = ['бакалея','молочка','мясо','овощи','фрукты','хлеб','специи','прочее'];
+  // 17B-PRODUCTS-GROUP: группировка по категориям + колонка «Используют»
+  const _usage = S.tripItemUsage || {};
+  const _groups = {};
   for (const p of list) {
+    const c = p.category || 'прочее';
+    (_groups[c] = _groups[c] || []).push(p);
+  }
+  const _collapsed = S._collapsedCats || (S._collapsedCats = {});
+  let html = '';
+  html += '<tr style="background:var(--card2,#222)"><td colspan="8" style="padding:6px;font-size:11px">';
+  html += '<button class="btn" id="expand-all" style="padding:3px 8px;font-size:11px">Развернуть все</button> ';
+  html += '<button class="btn" id="collapse-all" style="padding:3px 8px;font-size:11px">Свернуть все</button>';
+  html += ' <span style="color:var(--muted)"> · ' + list.length + ' шт · ' + Object.keys(_groups).length + ' кат.</span>';
+  html += '</td></tr>';
+  const _catOrder = ['бакалея','молочка','мясо','рыба','овощи','фрукты','хлеб','специи','напитки','заморозка','прочее'];
+  const _sortedCats = Object.keys(_groups).sort((a,b) => {
+    const ia=_catOrder.indexOf(a), ib=_catOrder.indexOf(b);
+    return (ia<0?999:ia) - (ib<0?999:ib);
+  });
+  for (const _cat of _sortedCats) {
+    const _items = _groups[_cat];
+    const _isCol = !!_collapsed[_cat];
+    html += '<tr class="cat-head" data-cat="' + esc(_cat) + '" style="background:rgba(255,255,255,0.03);cursor:pointer">';
+    html += '<td colspan="8" style="padding:6px;font-weight:600;font-size:12px">' + (_isCol ? '▸ ' : '▾ ') + esc(_cat) + ' <span style="color:var(--muted);font-weight:400">(' + _items.length + ')</span></td>';
+    html += '</tr>';
+    if (_isCol) continue;
+  for (const p of _items) {
     const rowCls = p.is_deleted ? ' class="row-del"' : '';
     html += '<tr data-pid="' + p.id + '"' + rowCls + '>';
     html += '<td>' + p.id + '</td>';
@@ -255,6 +349,7 @@ function render() {
     html += '</select></td>';
     html += '<td><input type="number" step="0.01" data-f="kcal_per_100g" value="' + (p.kcal_per_100g ?? '') + '" ' + (p.is_deleted ? 'disabled' : '') + '></td>';
     html += '<td style="text-align:center"><input type="checkbox" data-f="is_shared" ' + (p.is_shared ? 'checked' : '') + ' ' + (p.is_deleted ? 'disabled' : '') + '></td>';
+    html += '<td class="num" title="Кол-во trip_items с этим product_id" style="color:var(--muted)">' + (_usage[p.id] || 0) + '</td>';
     html += '<td>';
     if (p.is_deleted) {
       html += '<button class="btn" data-restore="' + p.id + '" title="Восстановить">↩</button>';
@@ -264,7 +359,22 @@ function render() {
     }
     html += '</td></tr>';
   }
+  }
   tb.innerHTML = html;
+
+  // 17B-PRODUCTS-GROUP: обработчики
+  const _redraw = () => render();
+  const _e = document.getElementById('expand-all');
+  const _c = document.getElementById('collapse-all');
+  if (_e) _e.addEventListener('click', () => { S._collapsedCats = {}; _redraw(); });
+  if (_c) _c.addEventListener('click', () => { const c={}; for (const k of Object.keys(_groups)) c[k]=true; S._collapsedCats = c; _redraw(); });
+  tb.querySelectorAll('.cat-head').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const cat = tr.dataset.cat;
+      S._collapsedCats[cat] = !S._collapsedCats[cat];
+      _redraw();
+    });
+  });
 }
 
 async function saveProduct(pid, field, value) {
@@ -419,6 +529,238 @@ document.getElementById('tbody').addEventListener('click', (e) => {
     api('/rest/v1/products?id=eq.' + restBtn.dataset.restore, { method: 'PATCH', prefer: 'return=minimal', body: { is_deleted: false } }).then(loadProducts);
   }
 });
+
+// 17B-ADMIN-TABS
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(c => { c.hidden = (c.dataset.tab !== name); });
+  if (name === 'families') loadFamilies();
+  if (name === 'audit') loadAuditTab();
+  if (name === 'settings') loadSettingsTab();
+}
+document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+// 17B-FAMILIES
+let _famCache = [], _usersCache = [];
+async function loadFamilies() {
+  const root = document.getElementById('fam-list');
+  if (!root) return;
+  root.textContent = 'Загрузка...';
+  try {
+    _famCache = await api('/rest/v1/families?select=id,name,owner_email,budget,family_size,city,store&order=id');
+    let h = '<table><thead><tr><th>ID</th><th>Название</th><th>Owner</th><th>Город</th><th>Магазин</th><th class="num">Бюджет</th><th class="num">Размер</th><th></th></tr></thead><tbody>';
+    for (const f of _famCache) {
+      h += '<tr><td>' + f.id + '</td><td>' + esc(f.name) + '</td><td>' + esc(f.owner_email||'—') + '</td><td>' + esc(f.city||'—') + '</td><td>' + esc(f.store||'—') + '</td><td class="num">' + (f.budget!=null?fmt(f.budget):'—') + '</td><td class="num">' + (f.family_size||'—') + '</td>';
+      h += '<td><button class="btn" data-fam-edit="' + f.id + '">✎</button></td></tr>';
+    }
+    h += '</tbody></table>';
+    root.innerHTML = h;
+    const sel = document.getElementById('usr-family');
+    if (sel) sel.innerHTML = _famCache.map(f => '<option value="' + f.id + '">' + esc(f.name) + '</option>').join('');
+    root.querySelectorAll('[data-fam-edit]').forEach(b => b.addEventListener('click', () => editFamily(+b.dataset.famEdit)));
+    await _loadUsers();
+  } catch (e) { root.textContent = 'Ошибка: ' + e.message; }
+}
+async function editFamily(fid) {
+  const f = _famCache.find(x => x.id === fid); if (!f) return;
+  const name = prompt('Название:', f.name||''); if (name===null) return;
+  const city = prompt('Город:', f.city||''); if (city===null) return;
+  const store = prompt('Магазин:', f.store||''); if (store===null) return;
+  const budget = prompt('Бюджет (BYN):', f.budget||''); if (budget===null) return;
+  try {
+    await api('/rest/v1/families?id=eq.' + fid, { method:'PATCH', prefer:'return=minimal', body:{ name, city, store, budget: budget?+budget:null }});
+    await loadFamilies();
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function addFamily() {
+  const name = prompt('Название новой семьи:'); if (!name) return;
+  try {
+    await api('/rest/v1/families', { method:'POST', prefer:'return=minimal', body:{ name, budget:null, family_size:1, city:null, store:null }});
+    await loadFamilies();
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+async function _loadUsers() {
+  const root = document.getElementById('usr-list'); if (!root) return;
+  root.textContent = 'Загрузка (auth.users)...';
+  try {
+    const r = await fetch(CFG.url + '/auth/v1/admin/users?per_page=200', { headers:{ 'apikey': CFG.key, 'Authorization': 'Bearer ' + S.token }});
+    if (!r.ok) { root.textContent = 'auth.users: HTTP ' + r.status + ' (нужен service_role/RPC)'; return; }
+    const j = await r.json();
+    _usersCache = (j.users || j || []).map(u => ({ email:u.email, role:(u.app_metadata||{}).role, family_id:(u.app_metadata||{}).family_id }));
+    let h = '<table><thead><tr><th>Email</th><th>Role</th><th class="num">Family</th></tr></thead><tbody>';
+    for (const u of _usersCache) h += '<tr><td>' + esc(u.email) + '</td><td>' + esc(u.role||'—') + '</td><td class="num">' + (u.family_id??'—') + '</td></tr>';
+    h += '</tbody></table>'; root.innerHTML = h;
+  } catch (e) { root.textContent = 'Ошибка: ' + e.message; }
+}
+async function addUserFromForm() {
+  const email = document.getElementById('usr-email').value.trim();
+  const pass = document.getElementById('usr-pass').value;
+  const role = document.getElementById('usr-role').value;
+  const famId = +document.getElementById('usr-family').value;
+  const msg = document.getElementById('usr-msg'); msg.style.color=''; msg.textContent='';
+  if (!email || !pass) { msg.textContent='email и пароль обязательны'; return; }
+  // P0-D: проверка дублей
+  try {
+    const sr = await fetch(CFG.url + '/auth/v1/admin/users?per_page=200', { headers:{ 'apikey': CFG.key, 'Authorization':'Bearer '+S.token }});
+    if (sr.ok) {
+      const sj = await sr.json();
+      const exist = (sj.users||sj||[]).find(u => (u.email||'').toLowerCase() === email.toLowerCase());
+      if (exist) {
+        const oldRole=(exist.app_metadata||{}).role, oldFam=(exist.app_metadata||{}).family_id;
+        if (!confirm('Email уже есть: ' + email + '\nrole=' + oldRole + ' family=' + oldFam + '\n\nНазначить в семью #' + famId + ' с ролью ' + role + '?')) {
+          msg.textContent = 'Отменено — email существует'; return;
+        }
+        const ur = await fetch(CFG.url + '/auth/v1/admin/users/' + exist.id, { method:'PUT', headers:{ 'apikey':CFG.key, 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify({ app_metadata:{ role, family_id: famId }, email_confirm:true }) });
+        if (!ur.ok) { const t=await ur.text(); msg.textContent='HTTP '+ur.status+': '+t.slice(0,200); return; }
+        msg.style.color='var(--green)'; msg.textContent='Обновлён: '+email+' -> '+role+', family='+famId;
+        await _loadUsers(); return;
+      }
+    }
+  } catch (e) {}
+  try {
+    const r = await fetch(CFG.url + '/auth/v1/admin/users', { method:'POST', headers:{ 'apikey':CFG.key, 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify({ email, password:pass, email_confirm:true, app_metadata:{ role, family_id:famId }}) });
+    if (!r.ok) {
+      const t = await r.text();
+      if (r.status===422 || t.includes('already registered')) msg.textContent='Email уже зарегистрирован: '+email;
+      else msg.textContent='HTTP '+r.status+': '+t.slice(0,200);
+      return;
+    }
+    msg.style.color='var(--green)'; msg.textContent='Создан: '+email+' ('+role+', family='+famId+')';
+    await _loadUsers();
+  } catch (e) { msg.textContent='Ошибка: '+e.message; }
+}
+setTimeout(() => {
+  const a=document.getElementById('fam-add'); if (a) a.addEventListener('click', addFamily);
+  const ua=document.getElementById('usr-add'); if (ua) ua.addEventListener('click', addUserFromForm);
+}, 0);
+// 17B-ADMIN-AUDIT
+async function loadAuditTab() {
+  const root = document.getElementById('admin-audit-body'); if (!root) return;
+  root.textContent = 'Загрузка...';
+  try {
+    const [purchases, trips, families] = await Promise.all([
+      api('/rest/v1/purchases?select=*&order=bought_at.desc&limit=5000'),
+      api('/rest/v1/trips?select=id,date,status,family_id&limit=1000'),
+      api('/rest/v1/families?select=id,city,store&limit=100')
+    ]);
+    const famMap = {}; for (const f of families) famMap[f.id] = f;
+    const tripMap = {}; for (const t of trips) tripMap[t.id] = t;
+    const byCity = {}, byStore = {};
+    for (const p of purchases) {
+      const t = tripMap[p.trip_id]; if (!t) continue;
+      const f = famMap[t.family_id] || {};
+      const c = f.city || '—', st = f.store || '—';
+      byCity[c] = byCity[c] || { sum:0, count:0 };
+      byCity[c].sum += +p.total_price||0; byCity[c].count++;
+      byStore[st] = byStore[st] || { sum:0, count:0 };
+      byStore[st].sum += +p.total_price||0; byStore[st].count++;
+    }
+    function _tbl(title, map) {
+      const arr = Object.entries(map).sort((a,b) => b[1].sum - a[1].sum);
+      let h = '<h3 style="font-size:12px;color:var(--muted);margin:12px 0 6px">' + title + '</h3><table><thead><tr><th>Ключ</th><th class="num">Покупок</th><th class="num">Сумма</th><th class="num">Ср.</th></tr></thead><tbody>';
+      for (const [k,v] of arr) h += '<tr><td>' + esc(k) + '</td><td class="num">' + v.count + '</td><td class="num">' + fmt(v.sum) + ' BYN</td><td class="num">' + fmt(v.count ? v.sum/v.count : 0) + '</td></tr>';
+      h += '</tbody></table>'; return h;
+    }
+    const total = purchases.reduce((s,p) => s + (+p.total_price||0), 0);
+    let h = '<div class="grid"><div class="trip-card"><div class="tc-items">Покупок</div><div class="tc-sum">' + purchases.length + '</div></div><div class="trip-card"><div class="tc-items">Сумма</div><div class="tc-sum">' + fmt(total) + ' BYN</div></div><div class="trip-card"><div class="tc-items">Ср. чек</div><div class="tc-sum">' + fmt(purchases.length ? total/purchases.length : 0) + ' BYN</div></div></div>';
+    h += _tbl('По городам', byCity);
+    h += _tbl('По магазинам', byStore);
+    h += '<div class="flex" style="margin-top:14px"><button class="btn primary" id="admin-audit-csv">📥 Экспорт purchases.csv</button></div>';
+    root.innerHTML = h;
+    const csvBtn = document.getElementById('admin-audit-csv');
+    if (csvBtn) csvBtn.addEventListener('click', () => {
+      let csv = 'date,product_id,qty,unit,price_per_unit,total,by\n';
+      for (const p of purchases) csv += [p.bought_at, p.product_id, p.qty, p.unit, p.price_per_unit, p.total_price, p.bought_by].join(',') + '\n';
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'purchases_' + new Date().toISOString().slice(0,10) + '.csv'; a.click();
+    });
+  } catch (e) { root.textContent = 'Ошибка: ' + e.message; }
+}
+// 17B-SETTINGS
+async function loadSettingsTab() {
+  try {
+    const [cats, units, cities, stores, limits] = await Promise.all([
+      api('/rest/v1/product_categories?select=id,name,sort_order&order=sort_order'),
+      api('/rest/v1/units?select=id,name,sort_order&order=sort_order'),
+      api('/rest/v1/cities?select=id,canonical_name,aliases,country&order=canonical_name'),
+      api('/rest/v1/stores?select=id,name,aliases&order=name'),
+      api('/rest/v1/limits?select=key,value,note&order=key')
+    ]);
+    _renderList('set-cat-list', cats, 'product_categories', 'name', true);
+    _renderList('set-unit-list', units, 'units', 'name', true);
+    _renderList('set-store-list', stores, 'stores', 'name', false);
+    _renderCities(cities);
+    _renderLimits(limits);
+    document.getElementById('set-cat-add').onclick = () => _addItem('product_categories', 'set-cat-new', {sort_order:100});
+    document.getElementById('set-unit-add').onclick = () => _addItem('units', 'set-unit-new', {sort_order:100});
+    document.getElementById('set-store-add').onclick = () => _addItem('stores', 'set-store-new', {country:'BY', aliases:[]});
+    document.getElementById('set-city-add').onclick = _addCity;
+  } catch (e) { console.error(e); }
+}
+function _renderList(id, arr, table, nameField, hasSort) {
+  const root = document.getElementById(id); if (!root) return;
+  let h = '<table><thead><tr><th>ID</th><th>' + nameField + '</th>' + (hasSort ? '<th class="num">Порядок</th>' : '') + '<th></th></tr></thead><tbody>';
+  for (const x of arr) {
+    h += '<tr><td>' + x.id + '</td><td><input data-st="' + table + '" data-sid="' + x.id + '" data-sf="' + nameField + '" value="' + esc(x[nameField]||'') + '"></td>';
+    if (hasSort) h += '<td class="num"><input type="number" data-st="' + table + '" data-sid="' + x.id + '" data-sf="sort_order" value="' + (x.sort_order||0) + '" style="width:60px"></td>';
+    h += '<td><button class="btn red" data-sdt="' + table + '" data-sdi="' + x.id + '">🗑</button></td></tr>';
+  }
+  h += '</tbody></table>'; root.innerHTML = h;
+  root.querySelectorAll('[data-st]').forEach(inp => inp.addEventListener('change', async () => {
+    const body = {}; body[inp.dataset.sf] = inp.type==='number' ? +inp.value : inp.value;
+    try { await api('/rest/v1/' + inp.dataset.st + '?id=eq.' + inp.dataset.sid, { method:'PATCH', prefer:'return=minimal', body }); }
+    catch(e) { alert('Ошибка: '+e.message); }
+  }));
+  root.querySelectorAll('[data-sdt]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Удалить #' + b.dataset.sdi + '?')) return;
+    try { await api('/rest/v1/' + b.dataset.sdt + '?id=eq.' + b.dataset.sdi, { method:'DELETE', prefer:'return=minimal' }); loadSettingsTab(); }
+    catch(e) { alert('Ошибка: '+e.message); }
+  }));
+}
+async function _addItem(table, inputId, extra) {
+  const el = document.getElementById(inputId); const v = el.value.trim(); if (!v) return;
+  const body = Object.assign({ name: v }, extra);
+  try { await api('/rest/v1/' + table, { method:'POST', prefer:'return=minimal', body }); el.value=''; loadSettingsTab(); }
+  catch(e) { alert('Ошибка: '+e.message); }
+}
+function _renderCities(arr) {
+  const root = document.getElementById('set-city-list'); if (!root) return;
+  let h = '<table><thead><tr><th>ID</th><th>Город</th><th>Алиасы</th><th class="num">Стр</th><th></th></tr></thead><tbody>';
+  for (const c of arr) {
+    const al = (c.aliases||[]).join(', ');
+    h += '<tr><td>' + c.id + '</td><td><input data-ct="' + c.id + '" data-cf="canonical_name" value="' + esc(c.canonical_name) + '"></td>';
+    h += '<td><input data-ct="' + c.id + '" data-cf="aliases" value="' + esc(al) + '" style="width:100%"></td>';
+    h += '<td class="num">' + esc(c.country||'') + '</td><td><button class="btn red" data-cdel="' + c.id + '">🗑</button></td></tr>';
+  }
+  h += '</tbody></table>'; root.innerHTML = h;
+  root.querySelectorAll('[data-ct]').forEach(inp => inp.addEventListener('change', async () => {
+    const f = inp.dataset.cf;
+    const body = (f === 'aliases') ? { aliases: inp.value.split(',').map(x=>x.trim()).filter(Boolean) } : { [f]: inp.value };
+    try { await api('/rest/v1/cities?id=eq.' + inp.dataset.ct, { method:'PATCH', prefer:'return=minimal', body }); }
+    catch(e) { alert('Ошибка: '+e.message); }
+  }));
+  root.querySelectorAll('[data-cdel]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Удалить город #' + b.dataset.cdel + '?')) return;
+    try { await api('/rest/v1/cities?id=eq.' + b.dataset.cdel, { method:'DELETE', prefer:'return=minimal' }); loadSettingsTab(); }
+    catch(e) { alert('Ошибка: '+e.message); }
+  }));
+}
+async function _addCity() {
+  const n = document.getElementById('set-city-new').value.trim(); if (!n) return;
+  const al = document.getElementById('set-city-alias').value.split(',').map(x=>x.trim()).filter(Boolean);
+  try { await api('/rest/v1/cities', { method:'POST', prefer:'return=minimal', body:{ canonical_name:n, aliases:al, country:'BY' } });
+    document.getElementById('set-city-new').value=''; document.getElementById('set-city-alias').value=''; loadSettingsTab(); }
+  catch(e) { alert('Ошибка: '+e.message); }
+}
+function _renderLimits(arr) {
+  const root = document.getElementById('set-limits-list'); if (!root) return;
+  let h = '<table><thead><tr><th>Ключ</th><th class="num">Знач</th><th>Описание</th></tr></thead><tbody>';
+  for (const l of arr) h += '<tr><td>' + esc(l.key) + '</td><td class="num"><input type="number" data-lk="' + l.key + '" value="' + l.value + '" style="width:80px"></td><td>' + esc(l.note||'') + '</td></tr>';
+  h += '</tbody></table>'; root.innerHTML = h;
+  root.querySelectorAll('[data-lk]').forEach(inp => inp.addEventListener('change', async () => {
+    try { await api('/rest/v1/limits?key=eq.' + encodeURIComponent(inp.dataset.lk), { method:'PATCH', prefer:'return=minimal', body:{ value: +inp.value } }); }
+    catch(e) { alert('Ошибка: '+e.message); }
+  }));
+}
 
 async function start() {
   document.getElementById('login-card').classList.add('hidden');
