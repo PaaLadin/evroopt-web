@@ -150,7 +150,30 @@ label{display:block;color:var(--muted);font-size:12px;margin:6px 0 2px}
 </div>
 
 <div class="tab-content" data-tab="danger" hidden>
-  <div class="card"><h2>Опасная зона</h2><div class="empty">TODO: очистка от-до, по семье, предпросмотр</div></div>
+  <div class="card"><h2 style="font-size:16px;color:#e55">DANGER ZONE</h2>
+  <p class="muted" style="font-size:12px">Действия необратимы. Сначала предпросмотр, потом ввод слова УДАЛИТЬ.</p>
+  <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <label>С <input type="date" id="dng-from"></label>
+    <label>По <input type="date" id="dng-to"></label>
+    <label>Семья <select id="dng-family"><option value="">-- все --</option></select></label>
+  </div>
+  <div class="row" style="display:flex;gap:14px;margin-bottom:10px;font-size:12px">
+    <label><input type="checkbox" id="dng-purchases" checked> purchases</label>
+    <label><input type="checkbox" id="dng-wmshist" checked> wms_history</label>
+    <label><input type="checkbox" id="dng-mealplans"> meal_plans</label>
+    <label><input type="checkbox" id="dng-trips"> trips (+items)</label>
+  </div>
+  <div class="flex" style="gap:8px;margin-bottom:10px">
+    <button class="btn" id="dng-preview">Предпросмотр</button>
+    <button class="btn red" id="dng-delete" disabled>Удалить</button>
+  </div>
+  <div id="dng-info" class="muted" style="font-size:12px;margin-bottom:6px"></div>
+  <div id="dng-body"></div>
+  <div class="row" style="margin-top:14px;display:none" id="dng-confirm-row">
+    <label>Введите слово УДАЛИТЬ:</label>
+    <input id="dng-confirm-word" style="flex:1">
+  </div>
+  </div>
   <div class="card">
   <h2 style="margin:0 0 8px;font-size:16px">🧹 Очистка истории</h2>
   <p style="color:var(--muted);font-size:12px;margin:0 0 8px">Удаляет purchases, wms_history, meal_plans старше указанного срока. Действие необратимо.</p>
@@ -761,6 +784,87 @@ function _renderLimits(arr) {
     catch(e) { alert('Ошибка: '+e.message); }
   }));
 }
+
+// 17B-DANGER-JS
+function _dngFilters() {
+  const from = document.getElementById('dng-from').value;
+  const to = document.getElementById('dng-to').value;
+  const fam = document.getElementById('dng-family').value;
+  const tables = [];
+  if (document.getElementById('dng-purchases').checked) tables.push('purchases');
+  if (document.getElementById('dng-wmshist').checked) tables.push('wms_history');
+  if (document.getElementById('dng-mealplans').checked) tables.push('meal_plans');
+  if (document.getElementById('dng-trips').checked) tables.push('trips');
+  return { from, to, fam, tables };
+}
+async function _dngPreview() {
+  const f = _dngFilters();
+  const info = document.getElementById('dng-info');
+  const body = document.getElementById('dng-body');
+  info.textContent = 'Считаю...';
+  body.innerHTML = '';
+  if (!f.tables.length) { info.textContent = 'Ничего не выбрано'; return; }
+  let h = '<table><thead><tr><th>Таблица</th><th class="num">Строк</th></tr></thead><tbody>';
+  let total = 0;
+  for (const t of f.tables) {
+    const q = [];
+    if (f.from) q.push(t === 'trips' ? 'date=gte.' + f.from : (t === 'meal_plans' ? 'plan_start=gte.' + f.from : 'created_at=gte.' + f.from));
+    if (f.to) q.push(t === 'trips' ? 'date=lte.' + f.to : (t === 'meal_plans' ? 'plan_end=lte.' + f.to : 'created_at=lte.' + f.to));
+    if (f.fam && (t === 'trips' || t === 'meal_plans')) q.push('family_id=eq.' + f.fam);
+    const qs = q.length ? ('?' + q.join('&') + '&select=id') : '?select=id';
+    try {
+      const rows = await api('/rest/v1/' + t + qs);
+      const n = Array.isArray(rows) ? rows.length : 0;
+      total += n;
+      h += '<tr><td>' + t + '</td><td class="num">' + n + '</td></tr>';
+    } catch (e) {
+      h += '<tr><td>' + t + '</td><td class="num" style="color:#e55">err ' + esc(e.message) + '</td></tr>';
+    }
+  }
+  h += '</tbody></table>';
+  body.innerHTML = h;
+  info.textContent = 'Всего к удалению: ' + total + ' строк.';
+  const delBtn = document.getElementById('dng-delete');
+  const confRow = document.getElementById('dng-confirm-row');
+  delBtn.disabled = total === 0;
+  confRow.style.display = total > 0 ? 'flex' : 'none';
+}
+async function _dngDelete() {
+  const f = _dngFilters();
+  const word = document.getElementById('dng-confirm-word').value.trim();
+  if (word !== 'УДАЛИТЬ') { alert('Введите слово УДАЛИТЬ'); return; }
+  if (!confirm('Удалить строки с выбранными фильтрами? Это НЕОБРАТИМО.')) return;
+  const info = document.getElementById('dng-info');
+  info.textContent = 'Удаляю...';
+  let okCount = 0, failCount = 0;
+  for (const t of f.tables) {
+    const q = [];
+    if (f.from) q.push(t === 'trips' ? 'date=gte.' + f.from : (t === 'meal_plans' ? 'plan_start=gte.' + f.from : 'created_at=gte.' + f.from));
+    if (f.to) q.push(t === 'trips' ? 'date=lte.' + f.to : (t === 'meal_plans' ? 'plan_end=lte.' + f.to : 'created_at=lte.' + f.to));
+    if (f.fam && (t === 'trips' || t === 'meal_plans')) q.push('family_id=eq.' + f.fam);
+    if (!q.length) { q.push('id=gt.0'); }
+    try {
+      await api('/rest/v1/' + t + '?' + q.join('&'), { method: 'DELETE', prefer: 'return=minimal' });
+      okCount++;
+    } catch (e) { failCount++; console.error('del ' + t, e); }
+  }
+  info.textContent = 'Удалено таблиц: ' + okCount + ', ошибок: ' + failCount;
+  document.getElementById('dng-delete').disabled = true;
+  document.getElementById('dng-confirm-word').value = '';
+}
+function _dngInit() {
+  const btn = document.getElementById('dng-preview'); if (!btn) return;
+  btn.addEventListener('click', _dngPreview);
+  document.getElementById('dng-delete').addEventListener('click', _dngDelete);
+  (async () => {
+    try {
+      const fams = await api('/rest/v1/families?select=id,name&order=id');
+      const sel = document.getElementById('dng-family');
+      for (const f of fams) { const o = document.createElement('option'); o.value = f.id; o.textContent = f.id + ': ' + f.name; sel.appendChild(o); }
+    } catch (e) {}
+  })();
+}
+setTimeout(_dngInit, 0);
 
 async function start() {
   document.getElementById('login-card').classList.add('hidden');
