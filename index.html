@@ -549,7 +549,7 @@ async function openTrip(tid) {
   for (const it of items) {
     const have = S.wms[it.product_id] || 0;
     const ov = it.override_buy_qty;
-    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);   // 17B-COLUMNS-FIX
     if (!it.hidden) {
       totalPlan += buy * (+it.plan_price_per_unit || 0);
       includedCount++;
@@ -564,7 +564,7 @@ async function openTrip(tid) {
   html += '<div class="fact-table-desktop" style="overflow-x:auto"><table style="min-width:720px">';
   html += '<thead><tr>';
   if (canAdminEdit) html += '<th style="width:32px">Вкл</th>';
-  html += '<th>Товар</th><th class="hide-sm">Вес</th><th class="num" style="width:80px">Купить</th><th class="num hide-sm">Дома</th><th class="num">План</th><th class="num hide-sm">Актуал.</th>';
+  html += '<th>Товар</th><th class="hide-sm" title="Что нужно купить по плану">План</th><th class="num" style="width:80px">Купить</th><th class="num hide-sm" title="Остаток на складе">Дома</th><th class="num" title="Сумма: Купить × Цена">Сумма</th><th class="num hide-sm">Актуал.</th>';
   if (canBuy || isReview || isDone) {
     html += '<th class="num" style="width:90px">Факт кол-во</th>';
     html += '<th class="num" style="width:90px">Факт ₽</th>';
@@ -581,7 +581,7 @@ async function openTrip(tid) {
     const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
     const have = S.wms[it.product_id] || 0;
     const ov = it.override_buy_qty;
-    const buyCalc = Math.max(0, (+it.target_qty || 0) - have);
+    const buyCalc = (+it.target_qty || 0);   // 17B-COLUMNS-FIX: «Купить» по умолчанию = весь план (раньше: план - склад)
     const buy = (ov !== null && ov !== undefined) ? +ov : buyCalc;
     const isOverride = (ov !== null && ov !== undefined);
     const planAdj = buy * (+it.plan_price_per_unit || 0);
@@ -644,7 +644,7 @@ async function openTrip(tid) {
     const p = productById(it.product_id) || { name: '?', unit: it.unit, search_url: '' };
     const have = S.wms[it.product_id] || 0;
     const ov = it.override_buy_qty;
-    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);   // 17B-COLUMNS-FIX
     const planAdj = buy * (+it.plan_price_per_unit || 0);
     const bought = (it.bought_qty > 0);
     const done = '';  // п.3: не зачёркиваем купленное
@@ -661,7 +661,8 @@ async function openTrip(tid) {
     }
     html += '</div>';
     html += '<div class="f-name"><a href="' + esc(p.search_url || '#') + '" target="_blank">' + esc(p.name) + '</a></div>';
-    html += '<div class="f-meta">План: ' + fmt(buy, 2) + ' ' + esc(it.unit || p.unit || '') + ' · ' + fmt(planAdj, 2) + ' BYN</div>';
+    const _planQty = (+it.target_qty || 0);
+    html += '<div class="f-meta">План: ' + fmt(_planQty, 2) + ' ' + esc(it.unit || p.unit || '') + ' · Купить: ' + fmt(buy, 2) + ' · ' + fmt(planAdj, 2) + ' BYN</div>';
     // 17B-MOBILE-ADMIN-EDIT: админ в draft правит «Купить» прямо в мобильной карточке.
     // Без этого на телефоне была только галочка «включить/выключить», а число
     // «Купить» оставалось с сервера, и родитель не мог уменьшить объём.
@@ -745,7 +746,7 @@ function _recalcTripUI(tid) {
     if (it.override_buy_qty === 0 || it.override_buy_qty === '0') continue;
     const have = S.wms[it.product_id] || 0;
     const ov = it.override_buy_qty;
-    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);   // 17B-COLUMNS-FIX
     totalPlan += buy * (+it.plan_price_per_unit || 0);
     includedCount++;
     if (it.bought_qty && +it.bought_qty > 0 && it.bought_price != null && it.bought_price !== '') {
@@ -768,7 +769,7 @@ function _recalcTripUI(tid) {
     if (!it) return;
     const have = S.wms[it.product_id] || 0;
     const ov = it.override_buy_qty;
-    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);   // 17B-COLUMNS-FIX
     const planAdj = buy * (+it.plan_price_per_unit || 0);
     const nums = tr.querySelectorAll('td.num');
     if (nums[2]) nums[2].textContent = fmt(planAdj, 2);
@@ -780,11 +781,12 @@ function _recalcTripUI(tid) {
     if (!it) return;
     const have = S.wms[it.product_id] || 0;
     const ov = it.override_buy_qty;
-    const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+    const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);   // 17B-COLUMNS-FIX
     const planAdj = buy * (+it.plan_price_per_unit || 0);
     const meta = card.querySelector('.f-meta');
     if (meta && !(meta.textContent || '').includes('Факт:')) {
-      meta.textContent = 'План: ' + fmt(buy, 2) + ' ' + (it.unit || '') + ' · ' + fmt(planAdj, 2) + ' BYN';
+      const _pq = (+it.target_qty || 0);
+      meta.textContent = 'План: ' + fmt(_pq, 2) + ' ' + (it.unit || '') + ' · Купить: ' + fmt(buy, 2) + ' · ' + fmt(planAdj, 2) + ' BYN';
     }
   });
 }
@@ -843,7 +845,7 @@ function bindTripModal(tid) {
             if (it2.hidden) continue;
             const have2 = S.wms[it2.product_id] || 0;
             const ov2 = it2.override_buy_qty;
-            const buy2 = (ov2 !== null && ov2 !== undefined) ? +ov2 : Math.max(0, (+it2.target_qty || 0) - have2);
+            const buy2 = (ov2 !== null && ov2 !== undefined) ? +ov2 : (+it2.target_qty || 0);   // 17B-COLUMNS-FIX
             t2 += buy2 * (+it2.plan_price_per_unit || 0);
             c2++;
           }
@@ -918,7 +920,7 @@ function bindTripModal(tid) {
           // при отметке — предзаполняем buy_qty, если пусто
           const have = S.wms[it.product_id] || 0;
           const ov = it.override_buy_qty;
-          const buy = (ov !== null && ov !== undefined) ? +ov : Math.max(0, (+it.target_qty || 0) - have);
+          const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);   // 17B-COLUMNS-FIX
           if (it.bought_qty === null || it.bought_qty === undefined || it.bought_qty === '') {
             it.bought_qty = buy;
             const qtyInput = tr.querySelector('input[data-act=bought-qty]');
