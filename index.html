@@ -2308,8 +2308,8 @@ function renderWizard() {
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
         <div><label>Семья (чел.)</label><input type="number" id="w-family" value="7" min="1"></div>
         <div><label>Бюджет</label><input type="number" id="w-budget" value="1800" step="1"></div>
-        <div><label>Город</label><input type="text" id="w-city" value="Брест"></div>
-        <div><label>Магазин</label><input type="text" id="w-store" value="Евроопт"></div>
+        <div><label>Город</label><input type="text" id="w-city" list="w-city-list" value="Брест" autocomplete="off"><datalist id="w-city-list"></datalist></div>
+        <div><label>Магазин</label><select id="w-store"><option value="Евроопт">Евроопт</option></select></div>
         <div><label>Каждые N дней</label><input type="number" id="w-frequency" value="2" min="1"></div>
         <div><label>Дней в плане</label><input type="number" id="w-days" value="30" min="7"></div>
         <div><label>Дата первого похода</label><input type="date" id="w-start-date"></div>
@@ -2390,7 +2390,40 @@ document.getElementById('w-fill-wms').addEventListener('click', () => {
     document.getElementById('w-wms-snapshot').value = lines.join('\n') || '(пусто)';
   });
 
-  document.getElementById('w-gen').addEventListener('click', () => {
+
+  // 17B-WIZ-AUTOCOMPLETE: заполнить datalist городов и select магазинов из справочников SQL 010
+  (async () => {
+    try {
+      const [cities, stores] = await Promise.all([
+        api('/rest/v1/cities?select=canonical_name,aliases&order=canonical_name'),
+        api('/rest/v1/stores?select=name,family_id&order=name')
+      ]);
+      const dl = document.getElementById('w-city-list');
+      if (dl) {
+        dl.innerHTML = '';
+        const seen = new Set();
+        for (const c of cities) {
+          const canon = c.canonical_name || '';
+          if (canon && !seen.has(canon)) { seen.add(canon); const o = document.createElement('option'); o.value = canon; dl.appendChild(o); }
+          for (const a of (c.aliases || [])) {
+            const s = String(a).toLowerCase();
+            if (s && !seen.has(s)) { seen.add(s); const o = document.createElement('option'); o.value = s; o.label = canon; dl.appendChild(o); }
+          }
+        }
+      }
+      const sel = document.getElementById('w-store');
+      if (sel) {
+        const cur = sel.value || 'Евроопт';
+        sel.innerHTML = '';
+        for (const st of stores) {
+          const o = document.createElement('option'); o.value = st.name; o.textContent = st.name + (st.family_id ? ' (моя)' : '');
+          sel.appendChild(o);
+        }
+        if (cur) sel.value = cur;
+      }
+    } catch (e) { console.warn('wiz autocomplete', e); }
+  })();
+    document.getElementById('w-gen').addEventListener('click', () => {
     // Автозаполнение WMS из склада, если пусто
     const wmsTa = document.getElementById('w-wms-snapshot');
     if (wmsTa && !wmsTa.value.trim()) {
