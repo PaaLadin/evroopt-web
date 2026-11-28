@@ -544,19 +544,24 @@ async function openTrip(tid) {
     html += '</div>';
   }
 
-  // Считаем итоги
-  let totalPlan = 0, includedCount = 0, boughtCount = 0, boughtSum = 0;
+  // 17B-PLAN-FACT-SPLIT: два отдельных итога — план (фикс) и факт (пересчёт)
+  const _isRD = (t.status === 'awaiting_review' || t.status === 'done');
+  let planBase = 0, includedCount = 0, factSum = 0, factCount = 0;
   for (const it of items) {
-    const have = S.wms[it.product_id] || 0;
-    const ov = it.override_buy_qty;
-    const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);   // 17B-COLUMNS-FIX
-    if (!it.hidden) {
-      totalPlan += buy * (+it.plan_price_per_unit || 0);
-      includedCount++;
-      if (it.bought_qty > 0) {
-        boughtCount++;
-        boughtSum += (+it.bought_price || 0);
+    if (it.hidden) continue;
+    includedCount++;
+    planBase += +it.plan_price_total || 0;
+    if (_isRD) {
+      if (it.bought_qty && +it.bought_qty > 0 && it.bought_price != null && it.bought_price !== '') {
+        factSum += +it.bought_price || 0;
+        factCount++;
       }
+    } else {
+      if (it.override_buy_qty === 0 || it.override_buy_qty === '0') continue;
+      const ov = it.override_buy_qty;
+      const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);
+      factSum += buy * (+it.plan_price_per_unit || 0);
+      factCount++;
     }
   }
 
@@ -686,9 +691,9 @@ async function openTrip(tid) {
 
   // ============ Итоги + кнопки ============
   html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">';
-  html += '<div class="muted" id="trip-totals" style="margin-bottom:10px" data-plan="' + totalPlan.toFixed(2) + '" data-count="' + includedCount + '">';
-  html += 'План: <b>' + fmt(totalPlan) + ' BYN</b>';
-  if (isReview || isDone) html += ' · Факт: <b style="color:var(--green)">' + fmt(boughtSum) + ' BYN</b> (' + boughtCount + ' поз.)';
+  html += '<div class="muted" id="trip-totals" style="margin-bottom:10px;font-size:13px" data-plan="' + planBase.toFixed(2) + '" data-count="' + includedCount + '">';
+  html += '<div>План: <b>' + fmt(planBase) + ' BYN</b> <span class="muted" style="font-size:11px">(заложено ИИ)</span></div>';
+  html += '<div style="margin-top:4px">Факт: <b id="trip-fact-sum" style="color:var(--green)">' + fmt(factSum) + ' BYN</b> <span id="trip-fact-count" class="muted" style="font-size:11px">(' + factCount + ' поз.)</span></div>';
   html += '</div>';
 
   // Buyer: сохранение на сервер (review)
@@ -740,27 +745,33 @@ async function openTrip(tid) {
 // Вызывается из buy-qty / bought-qty / bought-price / bought-toggle.
 function _recalcTripUI(tid) {
   const items = itemsByTrip(tid);
-  let totalPlan = 0, includedCount = 0, boughtSum = 0, boughtCount = 0;
+  const t = tripById(tid);
+  const _isRD = t && (t.status === 'awaiting_review' || t.status === 'done');
+  let planBase = 0, includedCount = 0, factSum = 0, factCount = 0;
   for (const it of items) {
     if (it.hidden) continue;
-    if (it.override_buy_qty === 0 || it.override_buy_qty === '0') continue;
-    const have = S.wms[it.product_id] || 0;
-    const ov = it.override_buy_qty;
-    const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);   // 17B-COLUMNS-FIX
-    totalPlan += buy * (+it.plan_price_per_unit || 0);
     includedCount++;
-    if (it.bought_qty && +it.bought_qty > 0 && it.bought_price != null && it.bought_price !== '') {
-      boughtSum += (+it.bought_price || 0);
-      boughtCount++;
+    planBase += +it.plan_price_total || 0;
+    if (_isRD) {
+      if (it.bought_qty && +it.bought_qty > 0 && it.bought_price != null && it.bought_price !== '') {
+        factSum += +it.bought_price || 0;
+        factCount++;
+      }
+    } else {
+      if (it.override_buy_qty === 0 || it.override_buy_qty === '0') continue;
+      const ov = it.override_buy_qty;
+      const buy = (ov !== null && ov !== undefined) ? +ov : (+it.target_qty || 0);
+      factSum += buy * (+it.plan_price_per_unit || 0);
+      factCount++;
     }
   }
   const totEl = document.getElementById('trip-totals');
   if (totEl) {
-    totEl.dataset.plan = totalPlan.toFixed(2);
+    totEl.dataset.plan = planBase.toFixed(2);
     totEl.dataset.count = includedCount;
-    let t = 'План: <b>' + fmt(totalPlan) + ' BYN</b>';
-    if (boughtCount > 0) t += ' · Факт: <b style="color:var(--green)">' + fmt(boughtSum) + ' BYN</b> (' + boughtCount + ' поз.)';
-    totEl.innerHTML = t;
+    totEl.innerHTML =
+      '<div>План: <b>' + fmt(planBase) + ' BYN</b> <span class="muted" style="font-size:11px">(заложено ИИ)</span></div>' +
+      '<div style="margin-top:4px">Факт: <b id="trip-fact-sum" style="color:var(--green)">' + fmt(factSum) + ' BYN</b> <span id="trip-fact-count" class="muted" style="font-size:11px">(' + factCount + ' поз.)</span></div>';
   }
   // Desktop: обновить td.num[2] (planAdj) для каждой видимой строки
   document.querySelectorAll('tr[data-iid]').forEach(tr => {
