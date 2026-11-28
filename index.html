@@ -2371,6 +2371,23 @@ function renderWizard() {
       <div id="w-menu-preview" style="margin-top:10px"></div>
       <button class="btn green" id="w-menu-import" style="margin-top:10px;display:none;width:100%">📤 Сохранить меню в БД</button>
     </div>
+
+    <div class="card">
+      <h2>🎯 Объединённый промт (план + меню за один запрос)</h2>
+      <p class="muted" style="margin:0 0 10px">Заполни параметры выше → сгенерируй объединённый промт → отправь ИИ → получи ДВА JSON → вставь сюда → «Разделить» разложит их по существующим полям импорта.</p>
+      <div class="flex" style="margin-bottom:10px">
+        <button class="btn primary" id="w-combined-gen">🎯 Сгенерировать объединённый промт</button>
+        <button class="btn" id="w-combined-copy">📋 Копировать</button>
+      </div>
+      <label>Промт (план + меню)</label>
+      <textarea id="w-combined-prompt" rows="18" style="font-family:monospace;font-size:11px"></textarea>
+      <label style="margin-top:10px">Ответ ИИ (два JSON-блока)</label>
+      <textarea id="w-combined-in" rows="10" style="font-family:monospace;font-size:11px"></textarea>
+      <div class="flex" style="margin-top:8px">
+        <button class="btn primary" id="w-combined-split">Разделить на plan / menu</button>
+      </div>
+      <div id="w-combined-msg" class="muted" style="margin-top:8px;font-size:12px"></div>
+    </div>
   `;
 
   // п: дата первого похода — по умолчанию сегодня
@@ -2488,6 +2505,27 @@ document.getElementById('w-fill-wms').addEventListener('click', () => {
   document.getElementById('w-import').addEventListener('click', importPlan);
 
   // ============= МЕНЮ: обработчики =============
+  // 17B-COMBINED-PROMPT: обработчики
+  const combGen = document.getElementById('w-combined-gen');
+  if (combGen) combGen.addEventListener('click', () => {
+    document.getElementById('w-combined-prompt').value = buildCombinedPrompt();
+  });
+  const combCopy = document.getElementById('w-combined-copy');
+  if (combCopy) combCopy.addEventListener('click', () => {
+    const ta = document.getElementById('w-combined-prompt');
+    ta.select(); document.execCommand('copy');
+  });
+  const combSplit = document.getElementById('w-combined-split');
+  if (combSplit) combSplit.addEventListener('click', () => {
+    const txt = document.getElementById('w-combined-in').value;
+    const msg = document.getElementById('w-combined-msg');
+    const r = _splitCombinedResponse(txt);
+    if (!r.ok) { msg.style.color = 'var(--red)'; msg.textContent = 'Ошибка: ' + r.error; return; }
+    document.getElementById('w-in').value = r.plan;
+    document.getElementById('w-menu-in').value = r.menu;
+    msg.style.color = 'var(--green)';
+    msg.textContent = 'OK. План (' + r.plan.length + ' б) → поле «Импорт плана». Меню (' + r.menu.length + ' б) → поле «Импорт меню». Жми Валидировать в каждом блоке.';
+  });
   const menuGen = document.getElementById('w-menu-gen');
   if (menuGen) {
     menuGen.addEventListener('click', () => {
@@ -2785,6 +2823,122 @@ async function importTripItems(tripId, items) {
       }
     });
   }
+}
+
+// 17B-COMBINED-PROMPT: объединённый промт (план + меню в одном запросе).
+// ИИ возвращает ДВА code-блока ```json: первый plan, второй menu. Пользователь
+// вставляет целиком в textarea #w-combined-in, жмёт «Разделить» -> поля w-in и
+// w-menu-in заполняются, дальше старые кнопки Валидировать/Импорт.
+function buildCombinedPrompt() {
+  const family = +document.getElementById('w-family').value || 7;
+  const budget = +document.getElementById('w-budget').value || 0;
+  const city = document.getElementById('w-city').value.trim() || 'Брест';
+  const store = document.getElementById('w-store').value.trim() || 'Евроопт';
+  const freq = +document.getElementById('w-frequency').value || 2;
+  const days = +document.getElementById('w-days').value || 30;
+  const startDate = document.getElementById('w-start-date').value;
+  const constraints = document.getElementById('w-constraints').value.trim();
+  const wms = document.getElementById('w-wms-snapshot').value.trim();
+  // Сроки походов — как в buildPrompt(), переиспользуем tripDateHelper
+  const tripDates = [];
+  if (startDate) {
+    let d = new Date(startDate + 'T00:00:00Z');
+    const total = Math.max(1, Math.ceil(days / Math.max(1, freq)));
+    for (let i = 0; i < total; i++) {
+      const ymd = d.toISOString().slice(0, 10);
+      tripDates.push(ymd);
+      d = new Date(d.getTime() + freq * 86400000);
+    }
+  }
+  const lastTrip = tripDates.length ? tripDates[tripDates.length - 1] : '';
+  const menuEnd = startDate ? (function() {
+    const d = new Date(startDate + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + days - 1);
+    return d.toISOString().slice(0, 10);
+  })() : '';
+
+  return `# Задание: составить ОДНОВРЕМЕННО (план закупок + меню) на ${days} дней
+
+## ВАЖНО
+Ты возвращаешь **ДВА JSON-блока** в одном ответе, в этом порядке:
+1. **PLAN** — план закупок (походы + позиции).
+2. **MENU** — меню питания (дни + блюда + batch-заготовки).
+
+План покупок и меню должны быть **согласованы**: продукты, которые нужны для блюд
+в меню, ДОЛЖНЫ быть в плане закупок (или уже на складе). Не покупай «1 кг морковки
+каждые 2 дня» — если морковка нужна в 5 блюдах, посчитай суммарное количество и
+закупи разом.
+
+## Параметры
+- Семья: ${family} человек
+- Бюджет: ${budget} BYN
+- Город: ${city}
+- Магазин: ${store}
+- Частота походов: каждые ${freq} дней
+- Горизонт плана: ${days} дней
+- Первый день: ${startDate || '(не задан)'}
+- Последний день меню: ${menuEnd || '(не задан)'}
+- Ограничения: ${constraints || 'нет'}
+
+## Даты походов
+${tripDates.length ? tripDates.map((d, i) => '  Поход #' + (i + 1) + ': ' + d).join('\n') : '  (задайте дату первого похода)'}
+
+## Что есть дома (WMS)
+${wms || '(считай что дома пусто)'}
+
+## ПРАВИЛА ПЛАНА (PLAN)
+1. Специи для блюд ВСЕГО горизонта — купить разом в базовом походе (1 уп, если нет на складе).
+2. Соль и сахар — бакалея, НЕ специи. Расход больше — покупай по потребности.
+3. Если продукт есть на складе в достатке (WMS) — не покупай.
+4. Учитывай сезонность и цены. Город/магазин заданы.
+5. Грамматика полей — см. схему ниже.
+
+## ПРАВИЛА МЕНЮ (MENU)
+1. Только продукты, которые:
+   - куплены в походе с датой РАНЬШЕ дня меню (вечером дня X продукт появляется для дня X+1), ИЛИ
+   - есть на складе (WMS выше).
+2. НЕ выдумывай продуктов.
+3. Точные названия — как в PLAN (используй name из план-позиций).
+4. Разнообразие: не менее ${Math.max(10, Math.floor(days * 1.5))} уникальных блюд.
+5. Многодневные блюда (борщ, суп, рагу на 2-3 дня) — через batch_dishes (cook_on + eaten_on).
+6. Списание через «Приготовлено» — по ингредиентам. Специи (unit="уп") не списываются.
+
+## ФОРМАТ ОТВЕТА (строго)
+
+Ответ — ровно два code-блока, без текста между ними и без текста до/после:
+
+\`\`\`json
+{ "trips": [ { "date": "${tripDates[0] || ''}", "kind": "base", "items": [ { "name": "...", "qty": 1.5, "unit": "кг", "price_per_unit": 2.50, "total": 3.75 } ] }, ... ] }
+\`\`\`
+
+\`\`\`json
+{ "menu": { "period": { "from": "${startDate || ''}", "to": "${menuEnd || ''}", "days": ${days} }, "family_size": ${family} }, "days": [ { "date": "${startDate || ''}", "meals": [ { "type": "breakfast", "name": "...", "servings": ${family}, "kcal_per_serving": 350, "ingredients": [ { "product_name": "...", "qty": 0.1, "unit": "кг" } ] } ] } ], "batch_dishes": [ { "id": "soup_01", "name": "...", "cook_on": "${startDate || ''}", "eaten_on": ["${startDate || ''}"], "servings": ${family}, "ingredients": [ ... ] } ] }
+\`\`\`
+
+Ничего лишнего — только два JSON-блока.
+`;
+}
+
+// 17B-COMBINED-PROMPT: разделение ответа ИИ на два JSON -> в w-in и w-menu-in.
+function _splitCombinedResponse(text) {
+  const blocks = [];
+  const re = /```(?:json)?\s*([\s\S]*?)```/g;
+  let m;
+  while ((m = re.exec(text)) !== null) blocks.push(m[1].trim());
+  if (blocks.length < 2) {
+    // fallback: найти два top-level JSON-объекта
+    return { ok: false, error: 'Найдено блоков: ' + blocks.length + ' (нужно >=2)' };
+  }
+  // определение: plan содержит "trips", menu содержит "menu" или "days"
+  let plan = null, menu = null;
+  for (const b of blocks) {
+    if (!plan && /\btrips\b/.test(b)) plan = b;
+    else if (!menu && (/\bmenu\b/.test(b) || /\bdays\b/.test(b))) menu = b;
+  }
+  if (!plan && blocks.length >= 1) plan = blocks[0];
+  if (!menu && blocks.length >= 2) menu = blocks[1];
+  if (!plan || !menu) return { ok: false, error: 'не удалось определить plan/menu по содержимому' };
+  return { ok: true, plan, menu };
 }
 
 function buildPrompt() {
